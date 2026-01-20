@@ -340,6 +340,29 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			chunk.edit_tiles(batched_changes[chunk_pos])
 
 
+# Gets the 4 cardinal neighbors of a world position with their tile data
+# Returns: Array of { "pos": Vector2, "tile_id": int, "cell_id": int }
+func get_neighbors_at_world_pos(world_pos: Vector2) -> Array:
+	var neighbors = []
+	var offsets = [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]
+	
+	for offset in offsets:
+		var neighbor_pos = world_pos + offset
+		var tile_data = get_tile_at_world_pos(neighbor_pos)
+		neighbors.append({
+			"pos": neighbor_pos,
+			"tile_id": tile_data[0],
+			"cell_id": tile_data[1]
+		})
+	
+	return neighbors
+
+
+# Gets the terrain generator for external cell_id queries
+func get_terrain_generator() -> TerrainGenerator:
+	return _chunk_loader.get_terrain_generator()
+
+
 # Cleanup on exit
 func _exit_tree() -> void:
 	if _chunk_loader:

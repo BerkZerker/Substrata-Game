@@ -60,6 +60,11 @@ func add_chunks_to_generation(new_chunks: Array[Vector2i], player_chunk: Vector2
 		_semaphore.post()
 
 
+# Returns the terrain generator for external cell_id queries
+func get_terrain_generator() -> TerrainGenerator:
+	return _terrain_generator
+
+
 # Retrieves a batch of built chunks from the queue
 func get_built_chunks(limit: int) -> Array[Dictionary]:
 	_mutex.lock()
