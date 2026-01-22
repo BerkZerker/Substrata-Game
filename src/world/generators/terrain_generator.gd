@@ -54,30 +54,50 @@ func generate_terrain_chunk(chunk_pos: Vector2i) -> PackedByteArray:
 	var data = PackedByteArray()
 	data.resize(chunk_size * chunk_size * 2) # 2 bytes per tile: [id, cell_number]
 
-	for i in range(chunk_size): # y
-		for j in range(chunk_size): # x
-			# Get the noise value for this position (i & j are reversed, don't ask why, nobody knows)
-			var height_value = _noise.get_noise_1d(float(chunk_pos.x * chunk_size + i))
-			var cave_value = _noise.get_noise_2d(float(chunk_pos.x * chunk_size + j), float(chunk_pos.y * chunk_size + i) * 5.0)
+	# Compute global coords, clamp surface height, fix layer ordering, enable caves
+	var cave_frequency = 0.05
+	var dirt_depth = 55
 
-			var surface_height = int((height_value + 1.0) * 0.5 * chunk_size) # Scale to [0, chunk_size]
-			var tile_id = 0
+	# Define a vertical span (in chunks) for the surface to vary across multiple
+	# chunks so surface is continuous between chunk boundaries.
+	var vertical_span_chunks = 8
+	var world_height = chunk_size * vertical_span_chunks
 
-			if i < surface_height:
-				tile_id = TileIndex.STONE
-			elif i == surface_height:
+	for y in range(chunk_size): # y
+		for x in range(chunk_size): # x
+			var global_x = chunk_pos.x * chunk_size + x
+			var global_y = chunk_pos.y * chunk_size + y
+
+			# Horizontal terrain variation (sample noise by global x)
+			var height_value = _noise.get_noise_2d(float(global_x), 0.0)
+			# Cave noise (2D, higher frequency)
+			var cave_value = _noise.get_noise_2d(float(global_x) * cave_frequency, float(global_y) * cave_frequency)
+			# Dirt amount
+			var dirt_value = abs(_noise.get_noise_1d(float(global_x))) * float(dirt_depth)
+
+			# Map noise [-1,1] -> [0, world_height-1] and clamp to world range
+			var surface_world_y = int((height_value * 0.5 + 0.5) * float(world_height - 1))
+			surface_world_y = clamp(surface_world_y, 0, world_height - 1)
+
+			var tile_id = TileIndex.AIR
+
+			# Compare the global tile Y against the world surface Y so adjacent
+			# chunks align on the same surface height.
+			if global_y < surface_world_y:
+				tile_id = TileIndex.AIR
+			elif global_y == surface_world_y:
 				tile_id = TileIndex.GRASS
-			elif i < surface_height + 3:
+			elif global_y <= surface_world_y + dirt_value:
 				tile_id = TileIndex.DIRT
 			else:
-				tile_id = TileIndex.AIR
+				tile_id = TileIndex.STONE
 
-			# Introduce caves
-			if tile_id != TileIndex.AIR and cave_value > 0.4:
+			# Introduce caves (carve into non-air tiles)
+			if tile_id != TileIndex.AIR and cave_value > 0.45:
 				tile_id = TileIndex.AIR
 
 			# Store interleaved: [id, cell_number]
-			var index = (i * chunk_size + j) * 2
+			var index = (y * chunk_size + x) * 2
 			data[index] = tile_id
 			data[index + 1] = 0 # Default cell number
 
