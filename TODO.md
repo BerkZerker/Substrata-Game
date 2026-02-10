@@ -15,3 +15,5 @@
 - Build a movement controller for testing terrain interaction - walking, jumping, falling, and colliding with terrain, this will come in handy when adding more entities besides the player and keep the player clean.
 
 - Consider moving to a component-based system when appliciable - so far I'm thinking stuff like entities, terrain generation, and items in the future.
+
+- Overall, futureproof the codebase and strcutre, making sure the code is: extendable in the future, readable, maintainable, efficient, well documented and of course, actually works.
