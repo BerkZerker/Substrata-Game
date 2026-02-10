@@ -1,8 +1,5 @@
 class_name GUIManager extends Control
 
-# References
-var _chunk_manager: ChunkManager = null
-
 # UI Elements
 var _panel: PanelContainer
 var _brush_size_label: Label
@@ -22,10 +19,6 @@ const BRUSH_CIRCLE = 1
 func _ready() -> void:
 	_setup_ui()
 	_setup_brush_preview()
-
-func setup_chunk_manager(chunk_manager: ChunkManager) -> void:
-	_chunk_manager = chunk_manager
-
 
 func _process(_delta: float) -> void:
 	_update_brush_preview()
@@ -118,15 +111,12 @@ func _change_brush_size(delta: int) -> void:
 
 
 func _setup_brush_preview() -> void:
-	# Create a Node2D in the world (not UI) to follow mouse
 	_brush_preview = Node2D.new()
-	_brush_preview.z_index = 100 # On top of terrain
-	# Add to GameInstance, not UI
-	get_parent().get_parent().add_child.call_deferred(_brush_preview)
-	
-	# Add a custom draw script
+	_brush_preview.z_index = 100
 	_brush_preview.set_script(load("res://src/gui/brush_preview.gd"))
-	_brush_preview.set_meta("gui_manager", self) # Pass reference back
+	_brush_preview.set_meta("gui_manager", self)
+	# Add to scene root so it renders in world space (not UI space)
+	get_tree().current_scene.add_child.call_deferred(_brush_preview)
 
 
 func _update_brush_preview() -> void:
@@ -161,8 +151,8 @@ func _apply_edit() -> void:
 				"cell_id": 0 # Default cell ID for now
 			})
 
-	if _chunk_manager:
-		_chunk_manager.set_tiles_at_world_positions(changes)
+	if GameServices.chunk_manager:
+		GameServices.chunk_manager.set_tiles_at_world_positions(changes)
 
 
 func _exit_tree() -> void:

@@ -32,7 +32,7 @@ Terrain data flows: `PackedByteArray` → `Image` (RGBA8, R=tile_id, G=cell_id) 
 
 ### Terrain Generation
 
-`TerrainGenerator` (`src/world/generators/terrain_generator.gd`) uses `FastNoiseLite` (Simplex noise) to produce layered terrain (grass surface → dirt → stone) with procedural caves. Runs entirely in the background thread — no Godot scene API calls allowed here.
+`TerrainGenerator` (`src/world/generators/terrain_generator.gd`) uses a single `FastNoiseLite` (Simplex noise, frequency 0.003) with threshold-based material assignment (>0.3 stone, >0.15 dirt, >0.1 grass, else air). Runs entirely in the background thread — no Godot scene API calls allowed here.
 
 ### Collision System
 
@@ -40,32 +40,33 @@ Custom **swept AABB** collision detection (`src/physics/collision_detector.gd`) 
 
 ### Global Autoloads
 
-Three autoloaded singletons (registered in `project.godot`):
+Four autoloaded singletons (registered in `project.godot`):
 
 - **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Emits `player_chunk_changed` to decouple player position tracking from chunk loading.
 - **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
 - **TileIndex** (`src/globals/tile_index.gd`) — Tile type constants: `AIR=0, DIRT=1, GRASS=2, STONE=3`.
+- **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager` reference, populated by `GameInstance._ready()`. Systems access ChunkManager through this autoload instead of manual wiring.
 
 ### Scene Tree Structure
 
 ```text
 GameInstance (Node)
-├── World (Node2D)
-│   ├── ChunkManager (Node2D) — owns all Chunk children
-│   └── Player (CharacterBody2D)
+├── Player (CharacterBody2D)
+├── ChunkManager (Node2D) — owns all Chunk children
+├── ChunkDebugOverlay (Node2D) — debug visualization (F1-F6 toggles)
 └── UILayer (CanvasLayer)
     └── GUIManager (Control)
 ```
 
-`GameInstance._ready()` wires cross-references: passes ChunkManager to both Player (for collision) and GUIManager (for editing).
+`GameInstance._ready()` registers ChunkManager with `GameServices`. Player and GUIManager access it lazily via `GameServices.chunk_manager`.
 
 ### Terrain Editing
 
-GUI (`src/gui/gui_manager.gd`) captures mouse input → calculates affected tiles by brush shape/size → batches changes as `{pos, tile_id, cell_id}` arrays → ChunkManager groups by chunk → each chunk updates data + re-uploads texture to GPU.
+GUI (`src/gui/gui_manager.gd`) captures mouse input → calculates affected tiles by brush shape/size → batches changes as `{pos, tile_id, cell_id}` arrays → ChunkManager groups by chunk → each chunk updates data + updates the existing `ImageTexture` in-place via `update()`.
 
-### Player
+### Player & Movement
 
-`src/entities/player.gd` — Platformer movement with gravity, coyote jump, and step-up mechanics. Uses the custom swept AABB collision system, not Godot's CharacterBody2D.
+`src/entities/player.gd` — Reads input and delegates to `MovementController` (`src/physics/movement_controller.gd`). The movement controller handles gravity, horizontal acceleration/friction, coyote jump, step-up mechanics, and swept AABB collision. It's a reusable `RefCounted` that can be composed into any entity.
 
 ## Key Constraints
 

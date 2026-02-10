@@ -1,19 +1,25 @@
 # TODO
 
-- Check over and clean up the chunk editing code and make sure everything functions correctly and efficiently when modifying terrain, especially with large edits - check for lag spikes.
+## Completed
 
-- Figure out a solution to the reference problem, the player and input manager need access to the chunk manager, perhaps a bus node in the game instance? I need to research if there are any already existing solutions. I also need to keep my code clean and well compartmentalized - each file should have a specific purpose and keep the logic internalized, high complexity within files, low complexity between different scripts.
+- ~~Check over and clean up the chunk editing code~~ — Fixed lag spikes by switching to in-place `ImageTexture.update()` instead of allocating a new GPU texture per edit. Editing is batched by chunk.
 
-- Clean up the debug overlay code and make it a bit more refined, add some debugging info to the main scene and add proper keybindings to toggle it in the project settings.
+- ~~Figure out a solution to the reference problem~~ — Implemented `GameServices` autoload as a service locator. `GameInstance._ready()` registers the ChunkManager, and any system accesses it via `GameServices.chunk_manager` without manual wiring.
 
-- Implement the WorkerThreadPool for generation, editing, loading and saving of chunks to improve performance and reduce lag spikes during gameplay. Pre-instance all chunk scenes and reuse them to reduce instancing overhead.
+- ~~Clean up the debug overlay code~~ — Fixed broken property references (was accessing ChunkLoader internals through ChunkManager). Added `get_debug_info()` API to ChunkManager/ChunkLoader. Wired up `ChunkDebugOverlay` in the game scene with F1-F6 keybindings. Starts with all overlays off.
 
-- Check over all my recent edits with Claude & myself to make sure the AI generated code is up to my standards and refactor as needed before introducing integrated profiling and documentation.
+- ~~Check over all recent AI-generated code and refactor~~ — Cleaned up terrain generator (clear variable names, removed dead code), brush preview (removed verbose comments), player (extracted movement logic). Reduced net line count by ~100.
 
-- Update `README.md` and add some basic documentation and at least 1 screenshot - maybe once I have actual terrain working that isn't just simplex noise.
+- ~~Build a movement controller~~ — Extracted movement physics into `MovementController` (`src/physics/movement_controller.gd`). Handles gravity, acceleration, friction, coyote jump, step-up, and swept AABB collision. Player is now a thin input wrapper that delegates to it. Reusable for any entity.
 
-- Build a movement controller for testing terrain interaction - walking, jumping, falling, and colliding with terrain, this will come in handy when adding more entities besides the player and keep the player clean.
+## Remaining
 
-- Consider moving to a component-based system when appliciable - so far I'm thinking stuff like entities, terrain generation, and items in the future.
+- Implement the `WorkerThreadPool` for chunk generation, editing, loading and saving. Currently uses a single `Thread` with Mutex/Semaphore. The debug overlay is now wired up to validate the migration. Chunk pooling is already in place (512 pool in ChunkManager).
 
-- Overall, futureproof the codebase and strcutre, making sure the code is: extendable in the future, readable, maintainable, efficient, well documented and of course, actually works.
+- Consider moving to a component-based system where applicable — entities, terrain generation, items. The `MovementController` extraction is a first step in this direction.
+
+- Improve terrain generation beyond simple simplex noise thresholds — density-based generation, caves, overhangs, biomes, cell IDs for visual variation.
+
+- Update `README.md` with screenshots once terrain generation is more visually interesting.
+
+- Futureproof the codebase: keep it extendable, readable, maintainable, efficient, and well documented.

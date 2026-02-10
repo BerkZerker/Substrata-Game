@@ -340,6 +340,33 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			chunk.edit_tiles(batched_changes[chunk_pos])
 
 
+# Returns a snapshot of debug info for the overlay
+func get_debug_info() -> Dictionary:
+	var loader_info = _chunk_loader.get_debug_info()
+	var removal_positions: Array[Vector2i] = []
+	for chunk in _removal_queue:
+		if is_instance_valid(chunk):
+			var chunk_size = GlobalSettings.CHUNK_SIZE
+			removal_positions.append(Vector2i(
+				int(chunk.position.x / chunk_size),
+				int(chunk.position.y / chunk_size)
+			))
+
+	return {
+		"loaded_chunks": _chunks.keys(),
+		"loaded_count": _chunks.size(),
+		"removal_positions": removal_positions,
+		"removal_queue_size": _removal_queue.size(),
+		"player_chunk": _player_chunk,
+		"player_region": _player_region,
+		"generation_queue": loader_info["generation_queue"],
+		"generation_queue_size": loader_info["generation_queue_size"],
+		"build_queue_size": loader_info["build_queue_size"],
+		"in_progress": loader_info["in_progress"],
+		"in_progress_size": loader_info["in_progress_size"],
+	}
+
+
 # Cleanup on exit
 func _exit_tree() -> void:
 	if _chunk_loader:

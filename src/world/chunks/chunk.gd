@@ -7,6 +7,7 @@ static var _shared_quad_mesh: QuadMesh
 
 var _terrain_data: PackedByteArray = PackedByteArray()
 var _terrain_image: Image
+var _data_texture: ImageTexture
 var _mutex: Mutex = Mutex.new()
 
 
@@ -42,21 +43,20 @@ func reset() -> void:
 	_mutex.lock()
 	_terrain_data.clear()
 	_terrain_image = null
+	_data_texture = null
 	_mutex.unlock()
-	
-	# Always clear texture to prevent memory leaks
+
 	if _visual_mesh.material:
 		_visual_mesh.material.set_shader_parameter("chunk_data_texture", null)
 
 
 # Sets up the mesh and shader data to draw the chunk using a pre-calculated image
 func _setup_visual_mesh(image: Image):
-	# Assign the shared mesh
 	_visual_mesh.mesh = _shared_quad_mesh
-	_visual_mesh.position = _visual_mesh.mesh.size / 2.0 # Center it
+	_visual_mesh.position = _visual_mesh.mesh.size / 2.0
 
-	var data_texture = ImageTexture.create_from_image(image)
-	_visual_mesh.material.set_shader_parameter("chunk_data_texture", data_texture)
+	_data_texture = ImageTexture.create_from_image(image)
+	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
 
 
 # Applies a batch of changes to the chunk's terrain data and visuals
@@ -104,11 +104,10 @@ func edit_tiles(changes: Array) -> void:
 		_update_visuals()
 
 
-# Internal helper to refresh the texture from the modified image
+# Updates the existing GPU texture in-place (avoids allocating a new texture per edit)
 func _update_visuals() -> void:
-	if _terrain_image and _visual_mesh.material:
-		var data_texture = ImageTexture.create_from_image(_terrain_image)
-		_visual_mesh.material.set_shader_parameter("chunk_data_texture", data_texture)
+	if _terrain_image and _data_texture:
+		_data_texture.update(_terrain_image)
 
 
 # Gets the tiles as the specified positions in the chunk

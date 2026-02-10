@@ -9,40 +9,37 @@ func _init(generation_seed: int) -> void:
 	_world_seed = generation_seed
 	_noise = FastNoiseLite.new()
 
-	# Configure the noise generator - I may move this later
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	_noise.seed = _world_seed
 	_noise.frequency = 0.003
 
 
-# Generates a chunk of terrain data based on the chunk position in chunk coordinates (not tile coordinates)
+# Generates terrain data for a chunk. chunk_pos is in chunk coordinates (not tiles).
+# Returns PackedByteArray with 2 bytes per tile: [tile_id, cell_id]
 func generate_chunk(chunk_pos: Vector2i) -> PackedByteArray:
 	var chunk_size = GlobalSettings.CHUNK_SIZE
 	var data = PackedByteArray()
-	data.resize(chunk_size * chunk_size * 2) # 2 bytes per tile: [id, cell_number]
-	
-	var cell_number = 0 # I will need to track this for each material type and track it globally in the generator
+	data.resize(chunk_size * chunk_size * 2)
 
-	for i in range(chunk_size): # y
-		for j in range(chunk_size): # x
-			# Get the noise value for this position (i & j are reversed, don't ask why, nobody knows)
-			var value = _noise.get_noise_2d(float(chunk_pos.x * chunk_size + j), float(chunk_pos.y * chunk_size + i))
+	var origin_x = chunk_pos.x * chunk_size
+	var origin_y = chunk_pos.y * chunk_size
 
-			var tile_id = 0
-			# Santize the value to be an int - solid is 1 air is 0
+	for y in range(chunk_size):
+		for x in range(chunk_size):
+			var world_x = float(origin_x + x)
+			var world_y = float(origin_y + y)
+			var value = _noise.get_noise_2d(world_x, world_y)
+
+			var tile_id = TileIndex.AIR
 			if value > 0.3:
 				tile_id = TileIndex.STONE
 			elif value > 0.15:
 				tile_id = TileIndex.DIRT
 			elif value > 0.1:
 				tile_id = TileIndex.GRASS
-			else:
-				tile_id = 0 # Air
-			
-			# Store interleaved: [id, cell_number]
-			# i is row (y), j is col (x)
-			var index = (i * chunk_size + j) * 2
+
+			var index = (y * chunk_size + x) * 2
 			data[index] = tile_id
-			data[index + 1] = cell_number
+			data[index + 1] = 0 # cell_id (unused for now)
 
 	return data

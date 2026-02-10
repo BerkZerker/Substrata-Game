@@ -114,6 +114,20 @@ func resort_queues(player_chunk: Vector2i) -> void:
 	_mutex.unlock()
 
 
+# Returns a thread-safe snapshot of queue state for debug visualization
+func get_debug_info() -> Dictionary:
+	_mutex.lock()
+	var info = {
+		"generation_queue": _generation_queue.duplicate(),
+		"generation_queue_size": _generation_queue.size(),
+		"build_queue_size": _build_queue.size(),
+		"in_progress": _chunks_in_progress.keys(),
+		"in_progress_size": _chunks_in_progress.size(),
+	}
+	_mutex.unlock()
+	return info
+
+
 # Worker thread loop for chunk generation
 func _worker_thread_loop() -> void:
 	while true:

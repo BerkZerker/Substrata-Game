@@ -23,6 +23,7 @@ config/features=PackedStringArray("4.6")
 SignalBus="*res://src/globals/signal_bus.gd"
 GlobalSettings="*res://src/globals/global_settings.gd"
 TileIndex="*res://src/globals/tile_index.gd"
+GameServices="*res://src/globals/game_services.gd"
 
 [display]
 
