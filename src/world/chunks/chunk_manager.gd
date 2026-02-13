@@ -1,3 +1,8 @@
+## Manages chunk lifecycle: loading, building, removal, and pooling.
+##
+## Monitors player position via SignalBus, queues chunk generation through
+## ChunkLoader, processes built chunks each frame, and handles chunk removal
+## and recycling.
 class_name ChunkManager extends Node2D
 
 # Variables
@@ -226,12 +231,12 @@ func _recycle_chunk(chunk: Chunk) -> void:
 			chunk.queue_free() # Free excess chunks
 
 
-# Gets the chunk at a given chunk position
+## Returns the chunk at the given chunk position, or null if not loaded.
 func get_chunk_at(chunk_pos: Vector2i) -> Chunk:
 	return _chunks.get(chunk_pos, null)
 
 
-# Converts world position to chunk position
+## Converts a world position to chunk coordinates.
 func world_to_chunk_pos(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(floor(world_pos.x / GlobalSettings.CHUNK_SIZE)), int(floor(world_pos.y / GlobalSettings.CHUNK_SIZE)))
 
@@ -244,14 +249,14 @@ func _positive_fmod(value: float, divisor: float) -> float:
 	return result
 
 
-# Converts world position to tile position within a chunk (0-31)
+## Converts a world position to tile coordinates within a chunk (0-31).
 func world_to_tile_pos(world_pos: Vector2) -> Vector2i:
 	var fx = _positive_fmod(world_pos.x, GlobalSettings.CHUNK_SIZE)
 	var fy = _positive_fmod(world_pos.y, GlobalSettings.CHUNK_SIZE)
 	return Vector2i(int(floor(fx)), int(floor(fy)))
 
 
-# Checks if a tile at the given world position is solid
+## Returns true if the tile at the given world position is solid.
 func is_solid_at_world_pos(world_pos: Vector2) -> bool:
 	var chunk_pos = world_to_chunk_pos(world_pos)
 	var chunk = get_chunk_at(chunk_pos)
@@ -261,7 +266,7 @@ func is_solid_at_world_pos(world_pos: Vector2) -> bool:
 	return chunk.get_tile_id_at(tile_pos.x, tile_pos.y) > 0 # Air is 0, anything else is solid
 
 
-# Gets terrain data at a world position
+## Returns [tile_id, cell_id] at the given world position.
 func get_tile_at_world_pos(world_pos: Vector2) -> Array:
 	var chunk_pos = world_to_chunk_pos(world_pos)
 	var chunk = get_chunk_at(chunk_pos)
@@ -271,8 +276,8 @@ func get_tile_at_world_pos(world_pos: Vector2) -> Array:
 	return chunk.get_tile_at(tile_pos.x, tile_pos.y)
 
 
-# Retrieves terrain data for a list of world positions
-# Returns a dictionary: { Vector2(world_pos): [tile_id, cell_id] }
+## Returns tile data for multiple world positions, batched by chunk.
+## Result dictionary: { Vector2(world_pos): [tile_id, cell_id] }
 func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 	var result = {}
 	var batched_requests = {} # { chunk_pos: [ { "world_pos": Vector2, "tile_pos": Vector2i } ] }
@@ -311,8 +316,8 @@ func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 	return result
 
 
-# Updates tiles at specific world positions
-# changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "cell_id": int }
+## Applies tile changes at multiple world positions, batched by chunk.
+## changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "cell_id": int }
 func set_tiles_at_world_positions(changes: Array) -> void:
 	var batched_changes = {} # { chunk_pos: [ { "x": int, "y": int, "tile_id": int, "cell_id": int } ] }
 	
@@ -340,7 +345,7 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			chunk.edit_tiles(batched_changes[chunk_pos])
 
 
-# Returns a snapshot of debug info for the overlay
+## Returns a snapshot of debug info for the overlay.
 func get_debug_info() -> Dictionary:
 	var loader_info = _chunk_loader.get_debug_info()
 	var removal_positions: Array[Vector2i] = []
@@ -364,6 +369,7 @@ func get_debug_info() -> Dictionary:
 		"build_queue_size": loader_info["build_queue_size"],
 		"in_progress": loader_info["in_progress"],
 		"in_progress_size": loader_info["in_progress_size"],
+		"active_tasks": loader_info.get("active_tasks", 0),
 	}
 
 

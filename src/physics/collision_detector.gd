@@ -1,3 +1,7 @@
+## Swept AABB collision detection against the tile grid.
+##
+## Performs axis-separated sweeps (X then Y) to resolve movement against solid
+## tiles. Does not use Godot's built-in physics engine.
 class_name CollisionDetector extends RefCounted
 
 # Constants
@@ -11,16 +15,16 @@ func _init(chunk_manager: ChunkManager) -> void:
 	_chunk_manager = chunk_manager
 
 
-# Performs swept AABB collision detection and returns the collision result
-# Parameters:
-#   aabb_pos: Current position of the AABB (center)
-#   aabb_size: Size of the AABB
-#   velocity: Movement velocity for this frame
-# Returns: Dictionary with:
-#   - position: Final position after collision resolution
-#   - velocity: Velocity after collision (may be modified for sliding)
-#   - collided: Whether a collision occurred
-#   - normal: Collision normal if collided
+## Performs swept AABB collision detection and returns the collision result.
+## Parameters:
+##   aabb_pos: Current position of the AABB (center)
+##   aabb_size: Size of the AABB
+##   velocity: Movement velocity for this frame
+## Returns: Dictionary with:
+##   - position: Final position after collision resolution
+##   - velocity: Velocity after collision (may be modified for sliding)
+##   - collided: Whether a collision occurred
+##   - normal: Collision normal if collided
 func sweep_aabb(aabb_pos: Vector2, aabb_size: Vector2, velocity: Vector2) -> Dictionary:
 	var result = {
 		"position": aabb_pos,
@@ -85,7 +89,7 @@ func sweep_aabb(aabb_pos: Vector2, aabb_size: Vector2, velocity: Vector2) -> Dic
 	return result
 
 
-# Checks if an AABB overlaps with any solid tiles
+## Checks if an AABB at the given position overlaps with any solid tiles.
 func intersect_aabb(aabb_pos: Vector2, aabb_size: Vector2) -> bool:
 	var half_size = aabb_size * 0.5
 	var aabb_min = aabb_pos - half_size

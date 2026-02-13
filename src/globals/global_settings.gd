@@ -8,3 +8,4 @@ const MAX_CHUNK_BUILDS_PER_FRAME: int = 16 # Max number of chunks to build per f
 const MAX_CHUNK_REMOVALS_PER_FRAME: int = 32 # Max number of chunks to remove per frame
 const MAX_BUILD_QUEUE_SIZE: int = 128 # Max chunks waiting to be built (backpressure threshold)
 const MAX_CHUNK_POOL_SIZE: int = 512 # Max number of chunks to keep in the pool for reuse
+const MAX_CONCURRENT_GENERATION_TASKS: int = 8 # Max parallel chunk generation tasks in WorkerThreadPool

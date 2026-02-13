@@ -30,18 +30,8 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not _movement:
-		if not GameServices.chunk_manager:
+		if not _try_init_movement():
 			return
-		var detector = CollisionDetector.new(GameServices.chunk_manager)
-		_movement = MovementController.new(detector)
-		_movement.speed = speed
-		_movement.acceleration = acceleration
-		_movement.friction = friction
-		_movement.jump_velocity = jump_velocity
-		_movement.gravity = gravity
-		_movement.step_height = step_height
-		_movement.coyote_time = coyote_time
-		_movement.collision_box_size = collision_box_size
 
 	var input_axis = Input.get_axis("move_left", "move_right")
 	var jump_pressed = Input.is_action_just_pressed("jump")
@@ -49,6 +39,22 @@ func _physics_process(delta: float) -> void:
 	position = _movement.move(position, input_axis, jump_pressed, delta)
 
 	_update_current_chunk()
+
+
+func _try_init_movement() -> bool:
+	if not GameServices.chunk_manager:
+		return false
+	var detector = CollisionDetector.new(GameServices.chunk_manager)
+	_movement = MovementController.new(detector)
+	_movement.speed = speed
+	_movement.acceleration = acceleration
+	_movement.friction = friction
+	_movement.jump_velocity = jump_velocity
+	_movement.gravity = gravity
+	_movement.step_height = step_height
+	_movement.coyote_time = coyote_time
+	_movement.collision_box_size = collision_box_size
+	return true
 
 
 func _update_current_chunk() -> void:

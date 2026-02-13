@@ -12,14 +12,14 @@
 
 - ~~Build a movement controller~~ — Extracted movement physics into `MovementController` (`src/physics/movement_controller.gd`). Handles gravity, acceleration, friction, coyote jump, step-up, and swept AABB collision. Player is now a thin input wrapper that delegates to it. Reusable for any entity.
 
-## Remaining
+- ~~Implement WorkerThreadPool for chunk generation~~ — Replaced single Thread+Semaphore with WorkerThreadPool (up to 8 concurrent tasks). Tasks collect work under mutex and submit outside the lock. Backpressure and clean shutdown preserved. Debug overlay shows active task count.
 
-- Implement the `WorkerThreadPool` for chunk generation, editing, loading and saving. Currently uses a single `Thread` with Mutex/Semaphore. The debug overlay is now wired up to validate the migration. Chunk pooling is already in place (512 pool in ChunkManager).
+- ~~Improve terrain generation~~ — Replaced flat simplex noise thresholds with layered system: 1D heightmap for surface contour (hills), 2D cave noise for underground cavities, 2D surface noise for layer boundary variation. Terrain now has grass/dirt/stone layers, caves, and natural overhangs. Configurable via DEFAULT_CONFIG dictionary.
 
-- Consider moving to a component-based system where applicable — entities, terrain generation, items. The `MovementController` extraction is a first step in this direction.
+- ~~Component cleanup~~ — Removed unused CoyoteTimer node from player.tscn. Extracted movement init into `_try_init_movement()` in player.gd.
 
-- Improve terrain generation beyond simple simplex noise thresholds — density-based generation, caves, overhangs, biomes, cell IDs for visual variation.
+- ~~Futureproof the codebase~~ — Added `##` docstrings to 7 key files (class headers + public methods). Extended TileIndex with TILES lookup table, `is_solid()`, and `get_tile_name()`. Removed dead commented-out light() function from terrain shader. Made TerrainGenerator configurable via optional config dictionary.
+
+## Human TODO
 
 - Update `README.md` with screenshots once terrain generation is more visually interesting.
-
-- Futureproof the codebase: keep it extendable, readable, maintainable, efficient, and well documented.

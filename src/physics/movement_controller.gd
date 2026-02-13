@@ -1,3 +1,8 @@
+## Reusable physics controller for gravity, movement, step-up, and collision.
+##
+## Handles horizontal acceleration/friction, gravity, coyote jump timing, and
+## step-up mechanics using swept AABB collision. Composed into entities as a
+## RefCounted dependency.
 class_name MovementController extends RefCounted
 
 # Movement parameters
@@ -25,8 +30,8 @@ func _init(collision_detector: CollisionDetector) -> void:
 	_collision_detector = collision_detector
 
 
-# Applies gravity, horizontal movement, step-up, and collision.
-# Returns the new position after movement.
+## Applies gravity, horizontal movement, step-up, and collision.
+## Returns the new position after movement.
 func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: float) -> Vector2:
 	# Coyote timer
 	if is_on_floor:

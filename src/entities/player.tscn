@@ -14,6 +14,3 @@ texture = ExtResource("2_3glep")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 zoom = Vector2(4, 4)
-
-[node name="CoyoteTimer" type="Timer" parent="."]
-one_shot = true

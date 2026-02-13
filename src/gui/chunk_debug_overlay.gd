@@ -133,6 +133,7 @@ func _update_info_label() -> void:
 	info_text += "Loaded Chunks: %d\n" % _debug_info["loaded_count"]
 	info_text += "Generation Queue: %d\n" % _debug_info["generation_queue_size"]
 	info_text += "In Progress: %d\n" % _debug_info["in_progress_size"]
+	info_text += "Active Tasks: %d\n" % _debug_info.get("active_tasks", 0)
 	info_text += "Build Queue: %d\n" % _debug_info["build_queue_size"]
 	info_text += "Removal Queue: %d\n" % _debug_info["removal_queue_size"]
 	info_text += "\nPlayer Chunk: %s\n" % str(_debug_info["player_chunk"])

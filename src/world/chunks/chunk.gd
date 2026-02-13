@@ -1,3 +1,8 @@
+## Individual terrain chunk with mutex-protected data and shader-based rendering.
+##
+## Stores terrain as a PackedByteArray (2 bytes per tile: [tile_id, cell_id]).
+## Uses a shared QuadMesh and fragment shader for rendering. Supports pooling
+## via reset().
 class_name Chunk extends Node2D
 
 # Variables
@@ -11,7 +16,7 @@ var _data_texture: ImageTexture
 var _mutex: Mutex = Mutex.new()
 
 
-# Called when the node is added to the scene.
+## Initializes the shared quad mesh on first instance.
 func _ready() -> void:
 	# Initialize the shared mesh once if it doesn't exist
 	if not _shared_quad_mesh:
@@ -19,7 +24,7 @@ func _ready() -> void:
 		_shared_quad_mesh.size = Vector2(GlobalSettings.CHUNK_SIZE, GlobalSettings.CHUNK_SIZE)
 
 
-# Sets up the chunk's terrain data and position
+## Sets the chunk's terrain data and world position from chunk coordinates.
 func generate(chunk_data: PackedByteArray, chunk_pos: Vector2i) -> void:
 	_mutex.lock()
 	_terrain_data = chunk_data # Just a reference, not a copy (COW optimization works well here)
@@ -27,7 +32,7 @@ func generate(chunk_data: PackedByteArray, chunk_pos: Vector2i) -> void:
 	position = Vector2(chunk_pos.x * GlobalSettings.CHUNK_SIZE, chunk_pos.y * GlobalSettings.CHUNK_SIZE)
 
 
-# Takes a pre-generated image to create the texture
+## Creates the visual texture from a pre-generated image and makes the chunk visible.
 func build(visual_image: Image) -> void:
 	_mutex.lock()
 	_terrain_image = visual_image
@@ -37,7 +42,7 @@ func build(visual_image: Image) -> void:
 	visible = true
 
 
-# Resets the chunk for pooling
+## Resets the chunk for return to the pool. Clears terrain data and texture.
 func reset() -> void:
 	visible = false
 	_mutex.lock()
@@ -59,8 +64,8 @@ func _setup_visual_mesh(image: Image):
 	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
 
 
-# Applies a batch of changes to the chunk's terrain data and visuals
-# changes: Array of Dictionaries in the format { "x": int, "y": int, "tile_id": int, "cell_id": int }
+## Applies a batch of tile changes to terrain data and visuals.
+## changes: Array of { "x": int, "y": int, "tile_id": int, "cell_id": int }
 func edit_tiles(changes: Array) -> void:
 	if changes.is_empty():
 		return
@@ -110,7 +115,7 @@ func _update_visuals() -> void:
 		_data_texture.update(_terrain_image)
 
 
-# Gets the tiles as the specified positions in the chunk
+## Returns tile data for multiple positions within the chunk.
 func get_tiles(positions: Array[Vector2i]) -> Array:
 	var results: Array = []
 	
@@ -137,7 +142,7 @@ func get_tiles(positions: Array[Vector2i]) -> Array:
 	return results
 
 
-# Gets terrain data at a specific tile position within the chunk (0-31, 0-31)
+## Returns [tile_id, cell_id] at a specific tile position within the chunk.
 func get_tile_at(tile_x: int, tile_y: int) -> Array:
 	if tile_y < 0 or tile_y >= GlobalSettings.CHUNK_SIZE:
 		return [0, 0] # Return air if out of bounds
@@ -155,7 +160,7 @@ func get_tile_at(tile_x: int, tile_y: int) -> Array:
 	return result
 
 
-# Gets just the tile ID at a specific position (Optimized for collision - no Array allocation)
+## Returns just the tile ID at a specific position. Optimized for collision checks.
 func get_tile_id_at(tile_x: int, tile_y: int) -> int:
 	if tile_y < 0 or tile_y >= GlobalSettings.CHUNK_SIZE:
 		return 0 # Return air if out of bounds
