@@ -305,13 +305,12 @@ func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 				result[req["world_pos"]] = [0, 0]
 			continue
 			
-		# Access chunk data (locking happens inside chunk.get_tile_at, 
-		# but for critical performance we could add a bulk getter to Chunk too. 
-		# For now, this loop is "safe" but acquires lock per tile. 
-		# OPTIMIZATION: If needed, add `get_tiles(local_positions)` to Chunk.)
+		var tile_positions: Array[Vector2i] = []
 		for req in requests:
-			var tp = req["tile_pos"]
-			result[req["world_pos"]] = chunk.get_tile_at(tp.x, tp.y)
+			tile_positions.append(req["tile_pos"])
+		var tiles = chunk.get_tiles(tile_positions)
+		for i in range(requests.size()):
+			result[requests[i]["world_pos"]] = tiles[i]
 			
 	return result
 

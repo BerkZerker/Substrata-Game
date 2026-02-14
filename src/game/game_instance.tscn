@@ -16,11 +16,6 @@ position = Vector2(94, -112)
 
 [node name="ChunkDebugOverlay" type="Node2D" parent="." unique_id=1381102430]
 script = ExtResource("5_debug")
-show_loaded_regions = false
-show_chunk_outlines = false
-show_generation_queue = false
-show_removal_queue = false
-show_queue_info = false
 
 [node name="UILayer" type="CanvasLayer" parent="." unique_id=1473534271]
 

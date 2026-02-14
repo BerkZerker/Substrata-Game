@@ -70,10 +70,6 @@ func _update_current_chunk() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_camera.zoom *= (1 + zoom_amount)
-			if _camera.zoom.x > maximum_zoom.x:
-				_camera.zoom = maximum_zoom
+			_camera.zoom = (_camera.zoom * (1 + zoom_amount)).clamp(minimum_zoom, maximum_zoom)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_camera.zoom *= (1 - zoom_amount)
-			if _camera.zoom.x < minimum_zoom.x:
-				_camera.zoom = minimum_zoom
+			_camera.zoom = (_camera.zoom * (1 - zoom_amount)).clamp(minimum_zoom, maximum_zoom)
