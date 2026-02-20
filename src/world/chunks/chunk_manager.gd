@@ -24,8 +24,9 @@ var _chunk_pool: Array[Chunk] = [] # Pool of reusable chunk instances
 
 # Initialization
 func _ready() -> void:
-	# Initialize the threaded loader
-	_chunk_loader = ChunkLoader.new(world_seed)
+	# Initialize the terrain generator and threaded loader
+	var terrain_generator = SimplexTerrainGenerator.new(world_seed)
+	_chunk_loader = ChunkLoader.new(terrain_generator)
 
 	# Pre-populate chunk pool to prevent runtime instantiation lag
 	for i in range(GlobalSettings.MAX_CHUNK_POOL_SIZE):

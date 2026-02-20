@@ -72,19 +72,18 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed:
 		return
 
-	# Material selection
+	# Brush size
 	if event.keycode == KEY_Q:
 		_change_brush_size(-1)
 	elif event.keycode == KEY_E:
 		_change_brush_size(1)
-	elif event.keycode == KEY_1:
-		_set_material(TileIndex.AIR)
-	elif event.keycode == KEY_2:
-		_set_material(TileIndex.DIRT)
-	elif event.keycode == KEY_3:
-		_set_material(TileIndex.GRASS)
-	elif event.keycode == KEY_4:
-		_set_material(TileIndex.STONE)
+
+	# Material selection: number keys 1-9 map to tile IDs in registry order
+	var number_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
+	var tile_ids = TileIndex.get_tile_ids()
+	for i in range(mini(number_keys.size(), tile_ids.size())):
+		if event.keycode == number_keys[i]:
+			_set_material(tile_ids[i])
 
 	# Debug toggles
 	if event.is_action_pressed("toggle_controls_help"):

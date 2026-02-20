@@ -8,7 +8,7 @@ Substrata is a 2D voxel-based game built in **Godot 4.6** using **GDScript**. It
 
 ## Running the Project
 
-Open in Godot 4.6 and press F5. There is no external build system, test framework, or linter — everything runs through the Godot editor.
+Open in Godot 4.6 and press F5. To run headless tests: `./tests/run_tests.sh /path/to/godot`. See `docs/ENGINE_ARCHITECTURE.md` for full engine documentation.
 
 ## Code Style
 
@@ -28,11 +28,11 @@ The core system uses a background thread for chunk generation:
 
 ### Rendering Pipeline
 
-Terrain data flows: `PackedByteArray` → `Image` (RGBA8, R=tile_id, G=cell_id) → `ImageTexture` → fragment shader (`src/world/chunks/terrain.gdshader`) which decodes tile/cell IDs and maps to texture atlas (dirt/grass/stone).
+Terrain data flows: `PackedByteArray` → `Image` (RGBA8, R=tile_id, G=cell_id) → `ImageTexture` → fragment shader (`src/world/chunks/terrain.gdshader`) which decodes tile_id and samples a `Texture2DArray` (built by `TileIndex`) at the tile_id layer.
 
 ### Terrain Generation
 
-`TerrainGenerator` (`src/world/generators/terrain_generator.gd`) uses a single `FastNoiseLite` (Simplex noise, frequency 0.003) with threshold-based material assignment (>0.3 stone, >0.15 dirt, >0.1 grass, else air). Runs entirely in the background thread — no Godot scene API calls allowed here.
+All terrain generators extend `BaseTerrainGenerator` (`src/world/generators/base_terrain_generator.gd`), which defines the `generate_chunk(chunk_pos) -> PackedByteArray` interface. The default implementation is `SimplexTerrainGenerator` (`src/world/generators/simplex_terrain_generator.gd`), which uses layered `FastNoiseLite` (Simplex noise) with configurable parameters for surface shape, layer boundaries, and cliff detection. Generators are passed to `ChunkLoader` at construction time. Runs entirely in the background thread — no Godot scene API calls allowed here.
 
 ### Collision System
 
@@ -44,7 +44,7 @@ Four autoloaded singletons (registered in `project.godot`):
 
 - **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Emits `player_chunk_changed` to decouple player position tracking from chunk loading.
 - **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
-- **TileIndex** (`src/globals/tile_index.gd`) — Tile type constants: `AIR=0, DIRT=1, GRASS=2, STONE=3`.
+- **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, and UI color. Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`.
 - **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager` reference, populated by `GameInstance._ready()`. Systems access ChunkManager through this autoload instead of manual wiring.
 
 ### Scene Tree Structure
@@ -70,7 +70,7 @@ GUI (`src/gui/gui_manager.gd`) captures mouse input → calculates affected tile
 
 ## Key Constraints
 
-- **Thread safety**: Any code that touches chunk terrain data must acquire the chunk's mutex. TerrainGenerator and ChunkLoader must not call Godot scene tree APIs.
+- **Thread safety**: Any code that touches chunk terrain data must acquire the chunk's mutex. Terrain generators and ChunkLoader must not call Godot scene tree APIs.
 - **Frame budget**: Chunk builds and removals are capped per frame to prevent stuttering. These limits are in `GlobalSettings`.
 - **Chunk pooling**: Chunks are recycled from a pool (up to `MAX_CHUNK_POOL_SIZE`) to avoid instantiation overhead. Don't create chunk instances directly — use the pool in ChunkManager.
 - **Y-inversion**: The `_generate_visual_image` method in ChunkLoader and the `edit_tiles` method in Chunk both apply Y-inversion when writing to the Image. This is required for correct rendering alignment between the PackedByteArray data layout and Image coordinate system. Do not remove it.

@@ -62,6 +62,9 @@ func _setup_visual_mesh(image: Image):
 
 	_data_texture = ImageTexture.create_from_image(image)
 	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
+	var tile_textures = TileIndex.get_texture_array()
+	if tile_textures:
+		_visual_mesh.material.set_shader_parameter("tile_textures", tile_textures)
 
 
 ## Applies a batch of tile changes to terrain data and visuals.
