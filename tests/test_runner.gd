@@ -23,6 +23,8 @@ func _run_all_tests() -> void:
 	_test_base_terrain_generator()
 	_test_simplex_terrain_generator()
 	_test_chunk_data_format()
+	_test_world_save_manager()
+	_test_signal_bus()
 
 	_print_results()
 
@@ -217,6 +219,117 @@ func _test_chunk_data_format() -> void:
 	_assert_true(GlobalSettings.LOD_RADIUS > 0, "LOD_RADIUS > 0")
 	_assert_true(GlobalSettings.MAX_CHUNK_POOL_SIZE > 0, "MAX_CHUNK_POOL_SIZE > 0")
 	_assert_true(GlobalSettings.MAX_CHUNK_BUILDS_PER_FRAME > 0, "MAX_CHUNK_BUILDS_PER_FRAME > 0")
+
+	print("")
+
+
+# ─── WorldSaveManager Tests ──────────────────────────────────────────
+
+func _test_world_save_manager() -> void:
+	print("--- WorldSaveManager ---")
+
+	var save_mgr = WorldSaveManager.new()
+
+	# Test constants
+	_assert_eq(WorldSaveManager.SAVE_FORMAT_VERSION, 1, "Save format version is 1")
+	_assert_eq(WorldSaveManager.WORLDS_BASE_PATH, "user://worlds/", "Worlds base path is correct")
+
+	# Test save and load world metadata
+	var test_world = "_test_world_%d" % randi()
+	var saved = save_mgr.save_world_meta(test_world, 12345, "simplex", {"grass_depth": 3})
+	_assert_true(saved, "save_world_meta returns true")
+
+	var meta = save_mgr.load_world_meta(test_world)
+	_assert_true(not meta.is_empty(), "load_world_meta returns non-empty dict")
+	_assert_eq(int(meta.get("world_seed", 0)), 12345, "Metadata seed is 12345")
+	_assert_eq(meta.get("generator_name", ""), "simplex", "Metadata generator is simplex")
+	_assert_eq(int(meta.get("version", 0)), 1, "Metadata version is 1")
+	_assert_true(meta.has("created_at"), "Metadata has created_at")
+	_assert_true(meta.has("last_saved_at"), "Metadata has last_saved_at")
+
+	# Test save_world_meta preserves created_at on update
+	var original_created_at = meta["created_at"]
+	save_mgr.save_world_meta(test_world, 12345, "simplex", {})
+	var meta2 = save_mgr.load_world_meta(test_world)
+	_assert_eq(meta2["created_at"], original_created_at, "created_at preserved on update")
+
+	# Test chunk save and load
+	var chunk_size = GlobalSettings.CHUNK_SIZE
+	var test_data = PackedByteArray()
+	test_data.resize(chunk_size * chunk_size * 2)
+	test_data[0] = TileIndex.DIRT
+	test_data[1] = 0
+	test_data[2] = TileIndex.STONE
+	test_data[3] = 0
+
+	var chunk_saved = save_mgr.save_chunk(test_world, Vector2i(5, -3), test_data)
+	_assert_true(chunk_saved, "save_chunk returns true")
+
+	_assert_true(save_mgr.has_saved_chunk(test_world, Vector2i(5, -3)), "has_saved_chunk returns true for saved chunk")
+	_assert_true(not save_mgr.has_saved_chunk(test_world, Vector2i(99, 99)), "has_saved_chunk returns false for unsaved chunk")
+
+	var loaded_data = save_mgr.load_chunk(test_world, Vector2i(5, -3))
+	_assert_eq(loaded_data.size(), test_data.size(), "Loaded chunk data size matches")
+	_assert_eq(loaded_data[0], TileIndex.DIRT, "Loaded chunk tile 0 is DIRT")
+	_assert_eq(loaded_data[2], TileIndex.STONE, "Loaded chunk tile 1 is STONE")
+
+	# Test load_chunk returns empty for nonexistent chunk
+	var missing = save_mgr.load_chunk(test_world, Vector2i(999, 999))
+	_assert_eq(missing.size(), 0, "load_chunk returns empty for missing chunk")
+
+	# Test list_worlds includes test world
+	var worlds = save_mgr.list_worlds()
+	_assert_true(worlds.has(test_world), "list_worlds includes test world")
+
+	# Test load_world_meta returns empty for nonexistent world
+	var no_meta = save_mgr.load_world_meta("_nonexistent_world_xyz")
+	_assert_true(no_meta.is_empty(), "load_world_meta returns empty for missing world")
+
+	# Test delete_world
+	var deleted = save_mgr.delete_world(test_world)
+	_assert_true(deleted, "delete_world returns true")
+	_assert_true(not save_mgr.has_saved_chunk(test_world, Vector2i(5, -3)), "Chunk gone after delete_world")
+	var deleted_meta = save_mgr.load_world_meta(test_world)
+	_assert_true(deleted_meta.is_empty(), "Metadata gone after delete_world")
+
+	# Test delete_world on nonexistent world returns true
+	_assert_true(save_mgr.delete_world("_nonexistent_world_xyz"), "delete_world on missing world returns true")
+
+	print("")
+
+
+# ─── Signal Bus Tests ────────────────────────────────────────────────
+
+func _test_signal_bus() -> void:
+	print("--- SignalBus ---")
+
+	# Verify all expected signals exist on SignalBus
+	_assert_true(SignalBus.has_signal("player_chunk_changed"), "SignalBus has player_chunk_changed")
+	_assert_true(SignalBus.has_signal("tile_changed"), "SignalBus has tile_changed")
+	_assert_true(SignalBus.has_signal("chunk_loaded"), "SignalBus has chunk_loaded")
+	_assert_true(SignalBus.has_signal("chunk_unloaded"), "SignalBus has chunk_unloaded")
+	_assert_true(SignalBus.has_signal("world_ready"), "SignalBus has world_ready")
+	_assert_true(SignalBus.has_signal("world_saving"), "SignalBus has world_saving")
+	_assert_true(SignalBus.has_signal("world_saved"), "SignalBus has world_saved")
+
+	# Test signal emission and reception for tile_changed
+	var received_args = []
+	var handler = func(pos, old_id, new_id): received_args.append([pos, old_id, new_id])
+	SignalBus.tile_changed.connect(handler)
+	SignalBus.tile_changed.emit(Vector2(10, 20), TileIndex.AIR, TileIndex.DIRT)
+	_assert_eq(received_args.size(), 1, "tile_changed signal received once")
+	_assert_eq(received_args[0][1], TileIndex.AIR, "tile_changed old_tile_id is AIR")
+	_assert_eq(received_args[0][2], TileIndex.DIRT, "tile_changed new_tile_id is DIRT")
+	SignalBus.tile_changed.disconnect(handler)
+
+	# Test chunk_loaded signal
+	var loaded_chunks = []
+	var load_handler = func(pos): loaded_chunks.append(pos)
+	SignalBus.chunk_loaded.connect(load_handler)
+	SignalBus.chunk_loaded.emit(Vector2i(3, 7))
+	_assert_eq(loaded_chunks.size(), 1, "chunk_loaded signal received once")
+	_assert_eq(loaded_chunks[0], Vector2i(3, 7), "chunk_loaded position is correct")
+	SignalBus.chunk_loaded.disconnect(load_handler)
 
 	print("")
 
