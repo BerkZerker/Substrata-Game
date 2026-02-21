@@ -7,16 +7,9 @@ signal brush_size_changed(new_size: int)
 const BRUSH_SQUARE = 0
 const BRUSH_CIRCLE = 1
 
-const MATERIAL_COLORS: Dictionary = {
-	0: Color(0.7, 0.8, 0.9, 0.5),  # AIR
-	1: Color(0.55, 0.35, 0.2),      # DIRT
-	2: Color(0.3, 0.7, 0.2),        # GRASS
-	3: Color(0.5, 0.5, 0.5),        # STONE
-}
-
 var _material_buttons: Dictionary = {}
 var _brush_size_label: Label
-var _current_material: int = 3
+var _current_material: int = TileIndex.STONE
 var _current_brush_size: int = 2
 
 
@@ -62,30 +55,34 @@ func _build_material_row(parent: Control) -> void:
 	row.add_theme_constant_override("separation", 4)
 	parent.add_child(row)
 
-	var materials = [
-		{"name": "Air", "id": TileIndex.AIR, "key": "1"},
-		{"name": "Dirt", "id": TileIndex.DIRT, "key": "2"},
-		{"name": "Grass", "id": TileIndex.GRASS, "key": "3"},
-		{"name": "Stone", "id": TileIndex.STONE, "key": "4"},
-	]
+	# Build buttons dynamically from the tile registry
+	var tile_ids = TileIndex.get_tile_ids()
+	var key_index = 1
 
-	for mat in materials:
+	for tile_id in tile_ids:
+		var tile_name = TileIndex.get_tile_name(tile_id)
+		var tile_color = TileIndex.get_tile_color(tile_id)
+
 		var container = HBoxContainer.new()
 		container.add_theme_constant_override("separation", 2)
 		row.add_child(container)
 
 		var swatch = ColorRect.new()
 		swatch.custom_minimum_size = Vector2(12, 12)
-		swatch.color = MATERIAL_COLORS[mat["id"]]
+		swatch.color = tile_color
 		container.add_child(swatch)
 
 		var btn = Button.new()
-		btn.text = "%s [%s]" % [mat["name"], mat["key"]]
-		var tile_id: int = mat["id"]
-		btn.pressed.connect(func(): material_changed.emit(tile_id))
+		if key_index <= 9:
+			btn.text = "%s [%d]" % [tile_name, key_index]
+		else:
+			btn.text = tile_name
+		var captured_id: int = tile_id
+		btn.pressed.connect(func(): material_changed.emit(captured_id))
 		container.add_child(btn)
 
 		_material_buttons[tile_id] = btn
+		key_index += 1
 
 
 func _build_size_row(parent: Control) -> void:

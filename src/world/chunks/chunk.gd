@@ -62,6 +62,9 @@ func _setup_visual_mesh(image: Image):
 
 	_data_texture = ImageTexture.create_from_image(image)
 	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
+	var tile_textures = TileIndex.get_texture_array()
+	if tile_textures:
+		_visual_mesh.material.set_shader_parameter("tile_textures", tile_textures)
 
 
 ## Applies a batch of tile changes to terrain data and visuals.
@@ -158,6 +161,14 @@ func get_tile_at(tile_x: int, tile_y: int) -> Array:
 	var result = [_terrain_data[index], _terrain_data[index + 1]]
 	_mutex.unlock()
 	return result
+
+
+## Returns a copy of the terrain data. Thread-safe.
+func get_terrain_data() -> PackedByteArray:
+	_mutex.lock()
+	var data = _terrain_data.duplicate()
+	_mutex.unlock()
+	return data
 
 
 ## Returns just the tile ID at a specific position. Optimized for collision checks.

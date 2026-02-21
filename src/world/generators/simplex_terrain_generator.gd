@@ -1,9 +1,11 @@
-## Generates terrain data for chunks using layered noise.
+## Generates terrain data for chunks using layered simplex noise.
 ##
 ## Uses dual heightmaps (broad hills + surface detail) and high-variation
 ## layer boundaries for organic-looking material distribution. Steep slopes
 ## are detected as cliff faces where grass doesn't grow.
-class_name TerrainGenerator extends RefCounted
+##
+## All parameters are configurable via the config dictionary passed to _init().
+class_name SimplexTerrainGenerator extends BaseTerrainGenerator
 
 ## Default configuration for terrain generation. Pass a partial dictionary
 ## to _init() to override specific values.
@@ -66,6 +68,11 @@ func _init(generation_seed: int, config: Dictionary = {}) -> void:
 	_layer_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	_layer_noise.seed = _world_seed + 2
 	_layer_noise.frequency = cfg["layer_frequency"]
+
+
+## Returns the name of this generator type.
+func get_generator_name() -> String:
+	return "simplex"
 
 
 ## Generates terrain data for a chunk at the given chunk position.

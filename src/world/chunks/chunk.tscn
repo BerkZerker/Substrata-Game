@@ -1,17 +1,11 @@
-[gd_scene load_steps=7 format=3 uid="uid://dbbq2vtjx0w0y"]
+[gd_scene load_steps=3 format=3 uid="uid://dbbq2vtjx0w0y"]
 
 [ext_resource type="Script" uid="uid://8tvneba1o3wn" path="res://src/world/chunks/chunk.gd" id="1_bwt5w"]
 [ext_resource type="Shader" uid="uid://b4vyqx2a5say4" path="res://src/world/chunks/terrain.gdshader" id="2_qjmub"]
-[ext_resource type="Texture2D" uid="uid://oe2jckdihhsp" path="res://assets/textures/dirt.png" id="3_wu04v"]
-[ext_resource type="Texture2D" uid="uid://83w5qniwnc00" path="res://assets/textures/grass.png" id="4_4mmhv"]
-[ext_resource type="Texture2D" uid="uid://dcbbq2hyi7qx3" path="res://assets/textures/stone.png" id="5_4aysp"]
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_nujw0"]
 resource_local_to_scene = true
 shader = ExtResource("2_qjmub")
-shader_parameter/dirt_texture = ExtResource("3_wu04v")
-shader_parameter/grass_texture = ExtResource("4_4mmhv")
-shader_parameter/stone_texture = ExtResource("5_4aysp")
 shader_parameter/texture_size = Vector2(32, 32)
 
 [node name="Chunk" type="Node2D"]

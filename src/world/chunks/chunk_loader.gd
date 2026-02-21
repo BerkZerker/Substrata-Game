@@ -17,13 +17,13 @@ var _generation_paused: bool = false # Backpressure flag when build queue is ful
 var _active_task_count: int = 0 # Number of tasks currently running in WorkerThreadPool
 
 # Synchronization and generation
-var _terrain_generator: TerrainGenerator
+var _terrain_generator: BaseTerrainGenerator
 var _mutex: Mutex
 
 
-## Initializes the chunk loader with a world seed for terrain generation.
-func _init(world_seed: int) -> void:
-	_terrain_generator = TerrainGenerator.new(world_seed)
+## Initializes the chunk loader with a terrain generator instance.
+func _init(terrain_generator: BaseTerrainGenerator) -> void:
+	_terrain_generator = terrain_generator
 	_mutex = Mutex.new()
 
 
