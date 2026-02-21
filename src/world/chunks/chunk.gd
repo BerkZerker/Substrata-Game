@@ -163,6 +163,14 @@ func get_tile_at(tile_x: int, tile_y: int) -> Array:
 	return result
 
 
+## Returns a copy of the terrain data. Thread-safe.
+func get_terrain_data() -> PackedByteArray:
+	_mutex.lock()
+	var data = _terrain_data.duplicate()
+	_mutex.unlock()
+	return data
+
+
 ## Returns just the tile ID at a specific position. Optimized for collision checks.
 func get_tile_id_at(tile_x: int, tile_y: int) -> int:
 	if tile_y < 0 or tile_y >= GlobalSettings.CHUNK_SIZE:

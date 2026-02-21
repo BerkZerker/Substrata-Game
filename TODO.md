@@ -25,19 +25,19 @@
 - [x] Unit tests for TileRegistry (registration, lookup, texture array)
 - [x] Unit tests for TerrainGenerator (chunk generation, data format, interface)
 
-## Phase 2: Persistence & Signals (Planned)
+## Phase 2: Persistence & Signals (Current)
 
 ### 4. Save/Load System
-- [ ] World serialization format (chunk data + metadata)
-- [ ] Chunk-level save/load (only modified chunks)
-- [ ] World metadata (seed, generator config, version)
-- [ ] Auto-save on chunk unload
+- [x] World serialization format (chunk data + metadata)
+- [x] Chunk-level save/load (only modified chunks)
+- [x] World metadata (seed, generator config, version)
+- [x] Auto-save on chunk unload
 
 ### 5. Signal Bus Expansion
-- [ ] `tile_changed(world_pos, old_tile, new_tile)` signal
-- [ ] `chunk_loaded(chunk_pos)` / `chunk_unloaded(chunk_pos)` signals
-- [ ] `world_ready` signal (initial chunks loaded)
-- [ ] Decouple systems further through events
+- [x] `tile_changed(world_pos, old_tile, new_tile)` signal
+- [x] `chunk_loaded(chunk_pos)` / `chunk_unloaded(chunk_pos)` signals
+- [x] `world_ready` signal (initial chunks loaded)
+- [x] Decouple systems further through events
 
 ## Phase 3: Engine API Surface (Planned)
 
@@ -73,6 +73,94 @@
 - [ ] Screen shake and effects
 - [ ] Zoom presets and limits
 
+## Phase 5: Content & Gameplay (Planned)
+
+### 11. Biome System
+- [ ] Biome definition format (tile palette, generator params, spawn rules)
+- [ ] Biome map generation (Voronoi or noise-based region assignment)
+- [ ] Biome-aware terrain generator (swap palettes per biome)
+- [ ] Biome transitions / blending at boundaries
+
+### 12. Expanded Tile Set
+- [ ] Sand, Water, Gravel, Clay, Snow, Ice tile types
+- [ ] Ore tiles (Coal, Iron, Gold, etc.)
+- [ ] Decorative tiles (Flowers, Mushrooms, Vines)
+- [ ] Tile properties beyond solidity (transparency, friction, damage)
+
+### 13. Health & Damage System
+- [ ] Health component (reusable, attachable to any entity)
+- [ ] Damage sources (fall damage, hazardous tiles, entity attacks)
+- [ ] Death and respawn logic
+- [ ] Invincibility frames / knockback
+
+### 14. Inventory & Crafting
+- [ ] Inventory data model (item stacks, slot management)
+- [ ] Inventory UI (hotbar + grid)
+- [ ] Item pickup / drop mechanics
+- [ ] Basic crafting recipes (tile → item conversions)
+
+### 15. Tools & Mining
+- [ ] Tool types with mining speed multipliers
+- [ ] Tool durability system
+- [ ] Tile hardness (time-to-break per tile type)
+- [ ] Mining particles / break animation
+
+## Phase 6: Audio (Planned)
+
+### 16. Sound Effects
+- [ ] Audio manager singleton (pooled AudioStreamPlayer nodes)
+- [ ] Tile interaction sounds (place, break, footstep per tile type)
+- [ ] Player sounds (jump, land, damage, death)
+- [ ] UI sounds (button clicks, inventory open/close)
+
+### 17. Music & Ambient
+- [ ] Background music system (crossfade, playlist)
+- [ ] Ambient sound layers (wind, caves, water)
+- [ ] Biome-specific audio profiles
+- [ ] Volume controls (master, music, SFX, ambient)
+
+## Phase 7: UI / UX (Planned)
+
+### 18. Main Menu & Game Flow
+- [ ] Main menu scene (New World, Load World, Settings, Quit)
+- [ ] World creation screen (seed input, generator selection)
+- [ ] Pause menu (Resume, Settings, Save & Quit)
+- [ ] Loading screen with progress bar during world generation
+
+### 19. Settings Menu
+- [ ] Graphics settings (render distance, VSync, fullscreen)
+- [ ] Audio settings (volume sliders)
+- [ ] Controls settings (key rebinding)
+- [ ] Settings persistence (save/load to user config file)
+
+### 20. HUD Improvements
+- [ ] Health bar display
+- [ ] Hotbar with selected item highlight
+- [ ] Minimap or chunk-level overview
+- [ ] Toast / notification system for events
+
+## Phase 8: Infrastructure & Tooling (Planned)
+
+### 21. CI / CD
+- [ ] GitHub Actions workflow for headless test suite
+- [ ] Automated export builds (Linux, Windows, macOS)
+- [ ] Lint / static analysis pass (gdlint or equivalent)
+- [ ] Version tagging and changelog generation
+
+### 22. Performance Profiling
+- [ ] Built-in frame time graph (beyond current debug HUD)
+- [ ] Chunk generation throughput metrics
+- [ ] Memory usage tracking (chunk pool, texture memory)
+- [ ] Bottleneck identification tooling
+
+### 23. Asset Pipeline
+- [ ] Texture atlas auto-packing (beyond manual Texture2DArray)
+- [ ] Tile definition files (JSON/Resource) instead of code-only registration
+- [ ] Asset hot-reload support for rapid iteration
+- [ ] Sprite sheet support for animated tiles
+
 ## Human TODO
 
 - Update `README.md` with screenshots once terrain generation is more visually interesting.
+- Create contribution guidelines if the project goes public.
+- Evaluate Godot 4.x LTS migration path when available.

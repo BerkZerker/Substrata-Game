@@ -42,7 +42,7 @@ Custom **swept AABB** collision detection (`src/physics/collision_detector.gd`) 
 
 Four autoloaded singletons (registered in `project.godot`):
 
-- **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Emits `player_chunk_changed` to decouple player position tracking from chunk loading.
+- **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`.
 - **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
 - **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, and UI color. Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`.
 - **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager` reference, populated by `GameInstance._ready()`. Systems access ChunkManager through this autoload instead of manual wiring.
@@ -58,7 +58,11 @@ GameInstance (Node)
     └── GUIManager (Control)
 ```
 
-`GameInstance._ready()` registers ChunkManager with `GameServices`. Player and GUIManager access it lazily via `GameServices.chunk_manager`.
+`GameInstance._ready()` registers ChunkManager with `GameServices` and sets up `WorldSaveManager` for persistence. Player and GUIManager access ChunkManager lazily via `GameServices.chunk_manager`.
+
+### Persistence
+
+`WorldSaveManager` (`src/world/persistence/world_save_manager.gd`) — `RefCounted` that handles saving/loading world data. Saves world metadata as JSON and chunk terrain data as raw `PackedByteArray` files. Save path: `user://worlds/{name}/`. ChunkManager tracks dirty chunks and auto-saves them on unload and on exit. Only modified chunks are persisted.
 
 ### Terrain Editing
 
