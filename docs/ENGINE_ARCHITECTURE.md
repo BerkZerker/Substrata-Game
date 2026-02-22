@@ -6,7 +6,7 @@ Substrata is a 2D voxel engine built in Godot 4.6 (GDScript). It provides proced
 
 ## Directory Structure
 
-```
+```text
 src/
 ├── entities/
 │   ├── player.gd          # Input handling, camera, delegates to MovementController
@@ -44,7 +44,7 @@ src/
 
 ## Scene Tree
 
-```
+```text
 GameInstance (Node)
 ├── Player (CharacterBody2D)
 │   ├── Sprite2D
@@ -60,12 +60,12 @@ GameInstance (Node)
 
 ## Autoloads
 
-| Name | File | Purpose |
-|------|------|---------|
-| SignalBus | `signal_bus.gd` | Global event bus. Currently emits `player_chunk_changed`. |
-| GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets. |
-| TileIndex | `tile_index.gd` | Tile registry. Registers tiles with properties and textures. Builds `Texture2DArray` for shader. |
-| GameServices | `game_services.gd` | Service locator. Holds `chunk_manager` reference. |
+| Name           | File                 | Purpose                                                                                          |
+| -------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| SignalBus      | `signal_bus.gd`      | Global event bus. Currently emits `player_chunk_changed`.                                        |
+| GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets.                                        |
+| TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with properties and textures. Builds `Texture2DArray` for shader. |
+| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager` reference.                                                |
 
 ## Tile Registry (TileIndex)
 
@@ -86,7 +86,7 @@ Default tiles (AIR=0, DIRT=1, GRASS=2, STONE=3) are registered in `_ready()`. Th
 
 ## Threading Model
 
-```
+```text
 Main Thread                    WorkerThreadPool
 ─────────────                  ─────────────────
 ChunkManager._process()   ←→   ChunkLoader._generate_chunk_task()
@@ -97,11 +97,13 @@ ChunkManager._process()   ←→   ChunkLoader._generate_chunk_task()
 ```
 
 ### Synchronization
+
 - **Mutex**: Protects ChunkLoader queues and Chunk terrain data
 - **Backpressure**: Generation pauses when build queue exceeds `MAX_BUILD_QUEUE_SIZE` (128). Resumes when drained below 50%.
 - **Frame budget**: Max 16 builds and 32 removals per frame (configurable in GlobalSettings)
 
 ### Thread Safety Rules
+
 1. TerrainGenerator must NOT call any Godot scene tree API
 2. ChunkLoader's `_generate_visual_image()` runs in worker thread — only uses `Image` API
 3. Chunk terrain data access requires mutex lock
@@ -111,7 +113,7 @@ ChunkManager._process()   ←→   ChunkLoader._generate_chunk_task()
 
 ### Data Flow
 
-```
+```text
 1. TerrainGenerator.generate_chunk(chunk_pos)
    → PackedByteArray (32×32×2 bytes: [tile_id, cell_id] per tile)
 
@@ -136,6 +138,7 @@ Data layout (row 0 = world Y=0) and Image layout (row 0 = top) are inverted. Bot
 ### Shader
 
 The terrain shader uses a `Texture2DArray` indexed by tile_id:
+
 - Layer 0 (AIR): discarded (transparent)
 - Layer 1+ : tile textures sampled with world-space UV
 
@@ -160,6 +163,7 @@ func get_generator_name() -> String:
 ### SimplexTerrainGenerator
 
 The default implementation uses three layered `FastNoiseLite` instances:
+
 - **Heightmap noise** (freq 0.002): Broad hills and valleys
 - **Detail noise** (freq 0.008): Surface roughness
 - **Layer noise** (freq 0.006): Dirt/stone boundary variation
@@ -185,6 +189,7 @@ Custom swept AABB detection (not Godot physics). `CollisionDetector` sweeps X th
 ### MovementController
 
 Reusable `RefCounted` with exported parameters. Composed into entities (not inherited). Handles:
+
 - Gravity and horizontal acceleration/friction
 - Coyote jump timing
 - Step-up mechanics (climb small ledges)
@@ -192,7 +197,7 @@ Reusable `RefCounted` with exported parameters. Composed into entities (not inhe
 
 ## Chunk Lifecycle
 
-```
+```text
 Pool → _get_chunk() → generate(data, pos) → build(image) → visible
                                                               ↓
                          ← _recycle_chunk() ← reset() ← removal queue
@@ -206,7 +211,7 @@ Pool → _get_chunk() → generate(data, pos) → build(image) → visible
 
 ## Terrain Editing
 
-```
+```text
 Mouse input → GUIManager._apply_edit()
   → generates tile changes by brush shape/size
   → ChunkManager.set_tiles_at_world_positions(changes)
@@ -221,27 +226,27 @@ Mouse input → GUIManager._apply_edit()
 
 ### GlobalSettings Constants
 
-| Constant | Default | Purpose |
-|----------|---------|---------|
-| CHUNK_SIZE | 32 | Tiles per chunk side |
-| REGION_SIZE | 4 | Chunks per region side |
-| LOD_RADIUS | 4 | Regions to generate around player |
-| REMOVAL_BUFFER | 2 | Extra regions before chunk removal |
-| MAX_CHUNK_BUILDS_PER_FRAME | 16 | Build budget per frame |
-| MAX_CHUNK_REMOVALS_PER_FRAME | 32 | Removal budget per frame |
-| MAX_BUILD_QUEUE_SIZE | 128 | Backpressure threshold |
-| MAX_CHUNK_POOL_SIZE | 512 | Chunk pool cap |
-| MAX_CONCURRENT_GENERATION_TASKS | 8 | WorkerThreadPool parallelism |
+| Constant                        | Default | Purpose                            |
+| ------------------------------- | ------- | ---------------------------------- |
+| CHUNK_SIZE                      | 32      | Tiles per chunk side               |
+| REGION_SIZE                     | 4       | Chunks per region side             |
+| LOD_RADIUS                      | 4       | Regions to generate around player  |
+| REMOVAL_BUFFER                  | 2       | Extra regions before chunk removal |
+| MAX_CHUNK_BUILDS_PER_FRAME      | 16      | Build budget per frame             |
+| MAX_CHUNK_REMOVALS_PER_FRAME    | 32      | Removal budget per frame           |
+| MAX_BUILD_QUEUE_SIZE            | 128     | Backpressure threshold             |
+| MAX_CHUNK_POOL_SIZE             | 512     | Chunk pool cap                     |
+| MAX_CONCURRENT_GENERATION_TASKS | 8       | WorkerThreadPool parallelism       |
 
 ## Input Actions
 
-| Action | Key | System |
-|--------|-----|--------|
-| move_left/right | A/D | Player movement |
-| jump | Space | Player jump |
-| 1/2/3/4 | Number keys | Material selection |
-| Q/E | Size keys | Brush size |
-| toggle_controls_help | F1 | Controls overlay |
-| toggle_cursor_info | F2 | Cursor info HUD |
-| toggle_debug_hud | F3 | Debug HUD |
-| toggle_debug_world_overlay | F4 | Chunk debug overlay |
+| Action                     | Key         | System              |
+| -------------------------- | ----------- | ------------------- |
+| move_left/right            | A/D         | Player movement     |
+| jump                       | Space       | Player jump         |
+| 1/2/3/4                    | Number keys | Material selection  |
+| Q/E                        | Size keys   | Brush size          |
+| toggle_controls_help       | F1          | Controls overlay    |
+| toggle_cursor_info         | F2          | Cursor info HUD     |
+| toggle_debug_hud           | F3          | Debug HUD           |
+| toggle_debug_world_overlay | F4          | Chunk debug overlay |
