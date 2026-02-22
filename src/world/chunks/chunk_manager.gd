@@ -335,6 +335,11 @@ func get_chunk_at(chunk_pos: Vector2i) -> Chunk:
 	return _chunks.get(chunk_pos, null)
 
 
+## Returns an array of all currently loaded chunk positions.
+func get_loaded_chunk_positions() -> Array:
+	return _chunks.keys()
+
+
 ## Returns the terrain generator used by this ChunkManager.
 func get_terrain_generator() -> RefCounted:
 	return _terrain_generator

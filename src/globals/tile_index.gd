@@ -39,6 +39,8 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"emission": 0,
 	"light_filter": 0,
 	"speed_modifier": 1.0,
+	"gravity_affected": false,
+	"growth_type": "none",
 }
 
 ## Path to the tile definitions JSON directory.
@@ -143,10 +145,10 @@ func _register_tile_from_dict(d: Variant) -> bool:
 func _register_default_tiles() -> void:
 	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0, "light_filter": 0})
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
-	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
+	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2), {"growth_type": "spread_surface"})
 	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3, "light_filter": 1})
-	register_tile(SAND, "Sand", true, "res://assets/textures/sand.png", Color(0.83, 0.66, 0.28), {"friction": 0.6})
-	register_tile(GRAVEL, "Gravel", true, "res://assets/textures/gravel.png", Color(0.55, 0.49, 0.42), {"friction": 0.9})
+	register_tile(SAND, "Sand", true, "res://assets/textures/sand.png", Color(0.83, 0.66, 0.28), {"friction": 0.6, "gravity_affected": true})
+	register_tile(GRAVEL, "Gravel", true, "res://assets/textures/gravel.png", Color(0.55, 0.49, 0.42), {"friction": 0.9, "gravity_affected": true})
 	register_tile(CLAY, "Clay", true, "res://assets/textures/clay.png", Color(0.63, 0.32, 0.18), {"friction": 1.2, "hardness": 2})
 	register_tile(SNOW, "Snow", true, "res://assets/textures/snow.png", Color(0.94, 0.94, 0.94), {"friction": 0.4})
 	register_tile(ICE, "Ice", true, "res://assets/textures/ice.png", Color(0.66, 0.85, 0.92), {"friction": 0.1, "hardness": 2})
@@ -157,7 +159,7 @@ func _register_default_tiles() -> void:
 	register_tile(LAVA, "Lava", false, "res://assets/textures/lava.png", Color(1.0, 0.27, 0.0), {"damage": 10.0, "emission": 60, "light_filter": 0})
 	register_tile(FLOWERS, "Flowers", false, "res://assets/textures/flowers.png", Color(0.9, 0.4, 0.5), {"transparency": 1.0})
 	register_tile(MUSHROOM, "Mushroom", false, "res://assets/textures/mushroom.png", Color(0.63, 0.32, 0.18), {"transparency": 1.0})
-	register_tile(VINES, "Vines", false, "res://assets/textures/vines.png", Color(0.18, 0.35, 0.15), {"transparency": 0.8})
+	register_tile(VINES, "Vines", false, "res://assets/textures/vines.png", Color(0.18, 0.35, 0.15), {"transparency": 0.8, "growth_type": "grow_down"})
 
 
 ## Registers a tile type. Call rebuild_texture_array() after all registrations.
@@ -310,6 +312,16 @@ func get_light_filter(tile_id: int) -> int:
 ## Returns the speed modifier for a tile (default 1.0).
 func get_speed_modifier(tile_id: int) -> float:
 	return get_tile_property(tile_id, "speed_modifier")
+
+
+## Returns true if the tile is affected by gravity (default false).
+func get_gravity_affected(tile_id: int) -> bool:
+	return get_tile_property(tile_id, "gravity_affected")
+
+
+## Returns the growth type for a tile (default "none").
+func get_growth_type(tile_id: int) -> String:
+	return get_tile_property(tile_id, "growth_type")
 
 
 # Creates a transparent placeholder image for tiles without textures.

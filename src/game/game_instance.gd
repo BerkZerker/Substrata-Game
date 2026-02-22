@@ -29,3 +29,14 @@ func _ready() -> void:
 	dyn_light_mgr.name = "DynamicLightManager"
 	add_child(dyn_light_mgr)
 	GameServices.dynamic_light_manager = dyn_light_mgr
+
+	# Set up tile simulation (falling sand, etc.)
+	var tile_sim = TileSimulation.new()
+	tile_sim.name = "TileSimulation"
+	tile_sim.setup(chunk_manager)
+	add_child(tile_sim)
+
+	# Set up tile growth (grass spreading, vine growth)
+	var tile_growth = TileGrowthSystem.new()
+	tile_growth.name = "TileGrowthSystem"
+	add_child(tile_growth)
