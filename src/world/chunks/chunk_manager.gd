@@ -81,11 +81,24 @@ func _process_build_queue() -> void:
 		if chunk.get_parent() == null:
 			add_child(chunk)
 		
-		chunk.generate(terrain_data, chunk_pos)
+		var light_data: PackedByteArray = build_data.get("light_data", PackedByteArray())
+		chunk.generate(terrain_data, chunk_pos, light_data)
 		chunk.build(visual_image)
 		_chunks[chunk_pos] = chunk
 		chunks_to_mark_done.append(chunk_pos)
 		SignalBus.chunk_loaded.emit(chunk_pos)
+
+		# Cross-chunk border light fixup
+		var light_mgr = GameServices.light_manager
+		if light_mgr:
+			var neighbors = {}
+			for offset in [Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1)]:
+				var neighbor_pos = chunk_pos + offset
+				var neighbor = _chunks.get(neighbor_pos)
+				if neighbor:
+					neighbors[offset] = neighbor
+			if not neighbors.is_empty():
+				light_mgr.propagate_border_light(chunk_pos, chunk, neighbors)
 	
 	# Notify loader that these chunks are finished (so it can clean up tracking)
 	if not chunks_to_mark_done.is_empty():
@@ -368,12 +381,22 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			"cell_id": change["cell_id"]
 		})
 
-	# Dispatch batches to chunks
+	# Dispatch batches to chunks (skip visual update — light recalc rebuilds the image)
 	for chunk_pos in batched_changes.keys():
 		var chunk = get_chunk_at(chunk_pos)
 		if chunk != null:
-			chunk.edit_tiles(batched_changes[chunk_pos])
+			chunk.edit_tiles(batched_changes[chunk_pos], true)
 			_dirty_chunks[chunk_pos] = true
+
+	# Batch recalculate light for all edited chunks (cascades to neighbors)
+	var light_mgr = GameServices.light_manager
+	if light_mgr:
+		var edited_positions: Array[Vector2i] = []
+		for chunk_pos in batched_changes.keys():
+			if get_chunk_at(chunk_pos) != null:
+				edited_positions.append(chunk_pos)
+		if not edited_positions.is_empty():
+			light_mgr.recalculate_chunks_light(edited_positions)
 
 	# Emit tile_changed for each change (after data is committed)
 	for i in range(changes.size()):

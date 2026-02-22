@@ -69,7 +69,7 @@
 - [x] Smooth follow with frame-rate independent lerp
 - [x] Mouse wheel zoom with configurable step and limits
 - [x] Zoom presets (1x/2x/4x/8x) cycled with Z key
-- [ ] Screen shake and effects (deferred to Phase 4)
+- [x] Screen shake and effects
 
 ### 9. Entity System Foundation
 
@@ -77,24 +77,25 @@
 - [x] EntityManager with spawn/despawn lifecycle and monotonic ID assignment
 - [x] Entity signals on SignalBus (`entity_spawned`, `entity_despawned`)
 - [x] Wired into GameInstance and GameServices
-- [ ] Entity spawn/despawn through ChunkManager awareness (deferred to Phase 4)
+- [x] Entity spawn/despawn through ChunkManager awareness
 
-## Phase 4: Physics & Visuals (Planned)
+## Phase 4: Physics & Visuals (Complete)
 
 ### 10. Collision Extensions
 
-- [ ] Raycast queries (line-of-sight, projectiles)
-- [ ] Area queries (explosion radius, detection zones)
-- [ ] Collision responses driven by tile properties (slippery ice, damaging lava, liquid water)
+- [x] Raycast queries (DDA algorithm for line-of-sight, projectiles)
+- [x] Area queries (AABB and circle for explosion radius, detection zones)
+- [x] Collision responses driven by tile properties (friction modifier, damage detection, floor tile tracking)
 - [ ] Moving tile support & physics-based tiles (rope bridge, falling sand, broken fragments etc.)
 
 ### 11. Lighting System
 
-- [ ] Light data channel in terrain (cell_id or separate array)
-- [ ] Light propagation algorithm (flood fill or see if engine has built in tools that would work)
-- [ ] Dynamic light sources (torches, sun)
-- [ ] Day/night cycle support
-- [ ] Emissive tiles (glowing mushrooms, lava)
+- [x] Light data channel in terrain (B channel of RGBA8 chunk data image)
+- [x] Light propagation algorithm (BFS flood fill with per-tile light filtering)
+- [x] Dynamic light sources (emissive tiles via TileIndex emission property)
+- [x] Day/night cycle support (ambient_light shader uniform)
+- [x] Emissive tiles (emission + light_filter tile properties)
+- [x] Cross-chunk border light propagation
 
 ## Phase 5: Content & Gameplay (Planned)
 

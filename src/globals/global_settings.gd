@@ -9,3 +9,4 @@ const MAX_CHUNK_REMOVALS_PER_FRAME: int = 32 # Max number of chunks to remove pe
 const MAX_BUILD_QUEUE_SIZE: int = 128 # Max chunks waiting to be built (backpressure threshold)
 const MAX_CHUNK_POOL_SIZE: int = 512 # Max number of chunks to keep in the pool for reuse
 const MAX_CONCURRENT_GENERATION_TASKS: int = 8 # Max parallel chunk generation tasks in WorkerThreadPool
+const MAX_LIGHT: int = 80 # Maximum light level (gives ~79 tile range through air, ~39 through stone)

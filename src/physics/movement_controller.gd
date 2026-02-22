@@ -24,6 +24,7 @@ var is_on_floor: bool = false
 # Internal
 var _collision_detector: CollisionDetector
 var _coyote_timer: float = 0.0
+var _floor_tile_friction: float = 1.0
 
 
 func _init(collision_detector: CollisionDetector) -> void:
@@ -31,8 +32,8 @@ func _init(collision_detector: CollisionDetector) -> void:
 
 
 ## Applies gravity, horizontal movement, step-up, and collision.
-## Returns the new position after movement.
-func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: float) -> Vector2:
+## Returns Dictionary: { position: Vector2, velocity: Vector2, is_on_floor: bool, floor_tile_id: int, tile_damage: float }
+func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: float) -> Dictionary:
 	# Coyote timer
 	if is_on_floor:
 		_coyote_timer = coyote_time
@@ -42,11 +43,12 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 	# Gravity
 	velocity.y += gravity * delta
 
-	# Horizontal movement
+	# Horizontal movement with tile friction modifier
+	var effective_friction = friction * _floor_tile_friction
 	if input_axis != 0:
 		velocity.x = move_toward(velocity.x, input_axis * speed, acceleration * delta)
 	else:
-		velocity.x = move_toward(velocity.x, 0, friction * delta)
+		velocity.x = move_toward(velocity.x, 0, effective_friction * delta)
 
 	# Jump
 	if jump_pressed and (is_on_floor or _coyote_timer > 0.0):
@@ -84,7 +86,37 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 	else:
 		is_on_floor = false
 
-	return current_pos
+	# Determine floor tile and update friction multiplier
+	var floor_tile_id: int = 0
+	if is_on_floor:
+		var feet_y = current_pos.y + collision_box_size.y * 0.5 + 0.1
+		var feet_pos = Vector2(current_pos.x, feet_y)
+		var tile_data = GameServices.chunk_manager.get_tile_at_world_pos(feet_pos)
+		floor_tile_id = tile_data[0]
+		_floor_tile_friction = TileIndex.get_friction(floor_tile_id)
+	else:
+		_floor_tile_friction = 1.0
+
+	# Check for damage tiles overlapping the entity
+	var tile_damage: float = 0.0
+	var half_size = collision_box_size * 0.5
+	var entity_min = Vector2i(int(floor(current_pos.x - half_size.x)), int(floor(current_pos.y - half_size.y)))
+	var entity_max = Vector2i(int(ceil(current_pos.x + half_size.x)), int(ceil(current_pos.y + half_size.y)))
+	for tx in range(entity_min.x, entity_max.x):
+		for ty in range(entity_min.y, entity_max.y):
+			var check_pos = Vector2(tx + 0.5, ty + 0.5)
+			var td = GameServices.chunk_manager.get_tile_at_world_pos(check_pos)
+			var dmg = TileIndex.get_damage(td[0])
+			if dmg > 0.0:
+				tile_damage = maxf(tile_damage, dmg)
+
+	return {
+		"position": current_pos,
+		"velocity": velocity,
+		"is_on_floor": is_on_floor,
+		"floor_tile_id": floor_tile_id,
+		"tile_damage": tile_damage,
+	}
 
 
 # Attempts to step up a small obstacle. Returns new position or Vector2.ZERO if failed.

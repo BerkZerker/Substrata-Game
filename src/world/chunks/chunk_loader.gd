@@ -19,12 +19,14 @@ var _active_task_count: int = 0 # Number of tasks currently running in WorkerThr
 # Synchronization and generation
 var _terrain_generator: BaseTerrainGenerator
 var _mutex: Mutex
+var _light_propagator: LightPropagator
 
 
 ## Initializes the chunk loader with a terrain generator instance.
 func _init(terrain_generator: BaseTerrainGenerator) -> void:
 	_terrain_generator = terrain_generator
 	_mutex = Mutex.new()
+	_light_propagator = LightPropagator.new()
 
 
 ## Adds multiple chunks to the generation queue and submits tasks for processing.
@@ -176,9 +178,10 @@ func _generate_chunk_task(chunk_pos: Vector2i) -> void:
 		return
 	_mutex.unlock()
 
-	# Generate terrain data and visual image (thread-safe, no mutex needed)
+	# Generate terrain data, light data, and visual image (thread-safe, no mutex needed)
 	var terrain_data = _terrain_generator.generate_chunk(chunk_pos)
-	var visual_image = _generate_visual_image(terrain_data)
+	var light_data = _light_propagator.calculate_light(terrain_data)
+	var visual_image = _generate_visual_image(terrain_data, light_data)
 
 	# Push result to build queue
 	_mutex.lock()
@@ -188,7 +191,8 @@ func _generate_chunk_task(chunk_pos: Vector2i) -> void:
 		_build_queue.append({
 			"pos": chunk_pos,
 			"terrain_data": terrain_data,
-			"visual_image": visual_image
+			"visual_image": visual_image,
+			"light_data": light_data,
 		})
 
 		# Apply backpressure if build queue is too large
@@ -203,8 +207,8 @@ func _generate_chunk_task(chunk_pos: Vector2i) -> void:
 		_submit_tasks()
 
 
-# Generates the chunk image from terrain data in the worker thread.
-func _generate_visual_image(terrain_data: PackedByteArray) -> Image:
+# Generates the chunk image from terrain data and light data in the worker thread.
+func _generate_visual_image(terrain_data: PackedByteArray, light_data: PackedByteArray) -> Image:
 	var chunk_size = GlobalSettings.CHUNK_SIZE
 	var image = Image.create(chunk_size, chunk_size, false, Image.FORMAT_RGBA8)
 
@@ -219,7 +223,14 @@ func _generate_visual_image(terrain_data: PackedByteArray) -> Image:
 			var tile_id = float(terrain_data[index])
 			var cell_id = float(terrain_data[index + 1])
 
-			image.set_pixel(x, y, Color(tile_id * inv_255, cell_id * inv_255, 0, 0))
+			var light_value: float = 0.0
+			if not light_data.is_empty():
+				var light_index = effective_y * chunk_size + x
+				var sun = light_data[light_index * 2]
+				var block = light_data[light_index * 2 + 1]
+				light_value = float(maxi(sun, block)) / float(GlobalSettings.MAX_LIGHT)
+
+			image.set_pixel(x, y, Color(tile_id * inv_255, cell_id * inv_255, light_value, 0))
 
 	return image
 

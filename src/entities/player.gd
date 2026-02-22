@@ -29,7 +29,8 @@ func _physics_process(delta: float) -> void:
 	var input_axis = Input.get_axis("move_left", "move_right")
 	var jump_pressed = Input.is_action_just_pressed("jump")
 
-	position = _movement.move(position, input_axis, jump_pressed, delta)
+	var result = _movement.move(position, input_axis, jump_pressed, delta)
+	position = result.position
 
 	_update_current_chunk()
 

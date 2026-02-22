@@ -109,6 +109,121 @@ func intersect_aabb(aabb_pos: Vector2, aabb_size: Vector2) -> bool:
 	return false
 
 
+## Casts a ray through the tile grid using DDA (Digital Differential Analyzer).
+## Returns { hit: bool, position: Vector2, normal: Vector2, tile_pos: Vector2i, tile_id: int, distance: float }
+func raycast(origin: Vector2, direction: Vector2, max_distance: float) -> Dictionary:
+	var result = {
+		"hit": false,
+		"position": origin,
+		"normal": Vector2.ZERO,
+		"tile_pos": Vector2i.ZERO,
+		"tile_id": 0,
+		"distance": 0.0,
+	}
+
+	if direction.length_squared() < VELOCITY_EPSILON:
+		return result
+
+	direction = direction.normalized()
+
+	# Current tile position
+	var tile_x: int = int(floor(origin.x))
+	var tile_y: int = int(floor(origin.y))
+
+	# Step direction (+1 or -1)
+	var step_x: int = 1 if direction.x >= 0 else -1
+	var step_y: int = 1 if direction.y >= 0 else -1
+
+	# Distance along the ray to cross one tile boundary on each axis
+	var t_delta_x: float = INF if abs(direction.x) < VELOCITY_EPSILON else abs(1.0 / direction.x)
+	var t_delta_y: float = INF if abs(direction.y) < VELOCITY_EPSILON else abs(1.0 / direction.y)
+
+	# Distance from origin to the first tile boundary on each axis
+	var t_max_x: float
+	var t_max_y: float
+	if direction.x >= 0:
+		t_max_x = ((tile_x + 1.0) - origin.x) / direction.x if abs(direction.x) > VELOCITY_EPSILON else INF
+	else:
+		t_max_x = (tile_x - origin.x) / direction.x if abs(direction.x) > VELOCITY_EPSILON else INF
+
+	if direction.y >= 0:
+		t_max_y = ((tile_y + 1.0) - origin.y) / direction.y if abs(direction.y) > VELOCITY_EPSILON else INF
+	else:
+		t_max_y = (tile_y - origin.y) / direction.y if abs(direction.y) > VELOCITY_EPSILON else INF
+
+	var distance_traveled: float = 0.0
+
+	while distance_traveled < max_distance:
+		# Check current tile for solidity
+		var world_check = Vector2(tile_x, tile_y) + TILE_CENTER_OFFSET
+		if _chunk_manager.is_solid_at_world_pos(world_check):
+			result.hit = true
+			result.position = origin + direction * distance_traveled
+			result.tile_pos = Vector2i(tile_x, tile_y)
+			result.tile_id = _chunk_manager.get_tile_at_world_pos(world_check)[0]
+			result.distance = distance_traveled
+			# Normal is opposite of the direction we stepped into this tile
+			# Determined by which axis we last stepped on
+			return result
+
+		# Advance to next tile boundary
+		if t_max_x < t_max_y:
+			distance_traveled = t_max_x
+			tile_x += step_x
+			t_max_x += t_delta_x
+			result.normal = Vector2(-step_x, 0)
+		else:
+			distance_traveled = t_max_y
+			tile_y += step_y
+			t_max_y += t_delta_y
+			result.normal = Vector2(0, -step_y)
+
+	return result
+
+
+## Returns all solid tiles within an axis-aligned bounding box.
+## Each entry: { tile_pos: Vector2i, world_pos: Vector2, tile_id: int }
+func query_area(center: Vector2, half_extents: Vector2) -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	var min_tile = Vector2i(int(floor(center.x - half_extents.x)), int(floor(center.y - half_extents.y)))
+	var max_tile = Vector2i(int(ceil(center.x + half_extents.x)), int(ceil(center.y + half_extents.y)))
+
+	for tx in range(min_tile.x, max_tile.x):
+		for ty in range(min_tile.y, max_tile.y):
+			var world_check = Vector2(tx, ty) + TILE_CENTER_OFFSET
+			if _chunk_manager.is_solid_at_world_pos(world_check):
+				var tile_data = _chunk_manager.get_tile_at_world_pos(world_check)
+				results.append({
+					"tile_pos": Vector2i(tx, ty),
+					"world_pos": Vector2(tx, ty) + TILE_CENTER_OFFSET,
+					"tile_id": tile_data[0],
+				})
+	return results
+
+
+## Returns all solid tiles within a circular area.
+## Each entry: { tile_pos: Vector2i, world_pos: Vector2, tile_id: int }
+func query_area_circle(center: Vector2, radius: float) -> Array[Dictionary]:
+	var results: Array[Dictionary] = []
+	var radius_sq = radius * radius
+	var min_tile = Vector2i(int(floor(center.x - radius)), int(floor(center.y - radius)))
+	var max_tile = Vector2i(int(ceil(center.x + radius)), int(ceil(center.y + radius)))
+
+	for tx in range(min_tile.x, max_tile.x):
+		for ty in range(min_tile.y, max_tile.y):
+			var tile_center = Vector2(tx, ty) + TILE_CENTER_OFFSET
+			if tile_center.distance_squared_to(center) > radius_sq:
+				continue
+			if _chunk_manager.is_solid_at_world_pos(tile_center):
+				var tile_data = _chunk_manager.get_tile_at_world_pos(tile_center)
+				results.append({
+					"tile_pos": Vector2i(tx, ty),
+					"world_pos": tile_center,
+					"tile_id": tile_data[0],
+				})
+	return results
+
+
 # Sweeps along a single axis and returns collision info
 func _sweep_axis(aabb_pos: Vector2, half_size: Vector2, velocity: Vector2, axis: Vector2, tile_min: Vector2i, tile_max: Vector2i) -> Dictionary:
 	var result = {

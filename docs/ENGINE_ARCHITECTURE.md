@@ -41,9 +41,14 @@ src/
     │   ├── chunk_loader.gd     # Background generation scheduler
     │   ├── chunk_manager.gd    # Chunk lifecycle orchestrator
     │   └── terrain.gdshader    # Fragment shader (Texture2DArray)
-    └── generators/
-        ├── base_terrain_generator.gd    # Abstract generator interface
-        └── simplex_terrain_generator.gd # Simplex noise implementation
+    ├── generators/
+    │   ├── base_terrain_generator.gd    # Abstract generator interface
+    │   └── simplex_terrain_generator.gd # Simplex noise implementation
+    ├── lighting/
+    │   ├── light_manager.gd    # Cross-chunk light coordination (worklist cascade)
+    │   └── light_propagator.gd # Thread-safe BFS flood-fill
+    └── persistence/
+        └── world_save_manager.gd # Save/load world data
 ```
 
 ## Scene Tree
@@ -62,16 +67,16 @@ GameInstance (Node)
     └── GUIManager (Control)
 ```
 
-`GameInstance._ready()` registers all services with `GameServices`: `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`. All other systems access them lazily through the service locator.
+`GameInstance._ready()` registers all services with `GameServices`: `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`, `light_manager`. All other systems access them lazily through the service locator.
 
 ## Autoloads
 
 | Name           | File                 | Purpose                                                                                          |
 | -------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| SignalBus      | `signal_bus.gd`      | Global event bus. Signals include `player_chunk_changed`, `tile_changed`, `chunk_loaded`/`unloaded`, `world_ready`/`saving`/`saved`, `entity_spawned`/`despawned`. |
+| SignalBus      | `signal_bus.gd`      | Global event bus. Signals include `player_chunk_changed`, `tile_changed`, `chunk_loaded`/`unloaded`, `world_ready`/`saving`/`saved`, `entity_spawned`/`despawned`/`entity_chunk_changed`, `light_level_changed`. |
 | GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets.                                        |
 | TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with solidity, textures, and properties (friction, damage, transparency, hardness). Builds `Texture2DArray` for shader. |
-| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`. |
+| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`, `light_manager`. |
 
 ## Tile Registry (TileIndex)
 
@@ -88,12 +93,14 @@ Default tiles (AIR=0, DIRT=1, GRASS=2, STONE=3) are registered in `_ready()`. Th
 
 Each tile has a `properties` dictionary merged with `DEFAULT_PROPERTIES`:
 
-| Property       | Default | Description                       |
-| -------------- | ------- | --------------------------------- |
-| `friction`     | 1.0     | Surface friction multiplier       |
-| `damage`       | 0.0     | Contact damage per second         |
-| `transparency` | 1.0     | Light transmission (0=opaque)     |
-| `hardness`     | 1       | Mining difficulty                 |
+| Property       | Default | Description                                    |
+| -------------- | ------- | ---------------------------------------------- |
+| `friction`     | 1.0     | Surface friction multiplier                    |
+| `damage`       | 0.0     | Contact damage per second                      |
+| `transparency` | 1.0     | Light transmission (0=opaque)                  |
+| `hardness`     | 1       | Mining difficulty                              |
+| `emission`     | 0       | Light emitted (0-MAX_LIGHT), sources blocklight|
+| `light_filter` | 0       | Extra light attenuation per tile (0=air, 1=stone)|
 
 Custom properties are passed as the last argument to `register_tile()`. Missing keys fall back to defaults. To add a new property, add it to `DEFAULT_PROPERTIES` and optionally add a convenience getter.
 
@@ -137,8 +144,8 @@ ChunkManager._process()   ←→   ChunkLoader._generate_chunk_task()
 1. TerrainGenerator.generate_chunk(chunk_pos)
    → PackedByteArray (32×32×2 bytes: [tile_id, cell_id] per tile)
 
-2. ChunkLoader._generate_visual_image(terrain_data)
-   → Image (RGBA8, 32×32: R=tile_id/255, G=cell_id/255)
+2. ChunkLoader._generate_visual_image(terrain_data, light_data)
+   → Image (RGBA8, 32×32: R=tile_id/255, G=cell_id/255, B=light_level)
    → Y-inverted for rendering alignment
 
 3. Chunk.build(visual_image)
@@ -236,11 +243,17 @@ Mouse input → GUIManager._apply_edit()
   → generates tile changes by brush shape/size
   → ChunkManager.set_tiles_at_world_positions(changes)
     → groups by chunk
-    → Chunk.edit_tiles(changes)
+    → Chunk.edit_tiles(changes, skip_visual_update=true)
       → updates PackedByteArray (mutex locked)
-      → updates Image (Y-inverted)
-      → ImageTexture.update() (GPU sync)
+      → skips stale image writes (light recalc will rebuild)
+    → LightManager.recalculate_chunks_light(edited_positions)
+      → Pass 1: calculate_light() for each edited chunk
+      → Pass 2: import borders between edited + neighbor chunks
+      → Pass 3: rebuild visual images with correct lighting
+      → Pass 4: cascading propagation to affected neighbors
 ```
+
+The `skip_visual_update` parameter on `edit_tiles()` avoids a wasted GPU upload with stale light data. The full image (tile IDs + light levels) is rebuilt by the light manager after recalculation.
 
 ## Configuration
 
@@ -257,6 +270,7 @@ Mouse input → GUIManager._apply_edit()
 | MAX_BUILD_QUEUE_SIZE            | 128     | Backpressure threshold             |
 | MAX_CHUNK_POOL_SIZE             | 512     | Chunk pool cap                     |
 | MAX_CONCURRENT_GENERATION_TASKS | 8       | WorkerThreadPool parallelism       |
+| MAX_LIGHT                       | 80      | Maximum light level (8-bit range)  |
 
 ## Camera System
 
@@ -295,6 +309,49 @@ Since `CameraController` IS the scene's `Camera2D`, existing code using `get_vie
 - `_physics_process(delta)` — iterates all entities and calls `entity_process(delta)`
 
 Entity signals are typed as `Node2D` (not `BaseEntity`) on SignalBus to avoid coupling.
+
+## Lighting System
+
+Light data uses 2 bytes per tile: `[sunlight, blocklight]`, values 0 to `MAX_LIGHT` (80). Attenuation is `1 + light_filter` per tile: air/dirt/grass lose 1 per step (~79 tile range), stone loses 2 per step (~39 tile range).
+
+### LightPropagator
+
+`LightPropagator` (`src/world/lighting/light_propagator.gd`) — thread-safe `RefCounted`, runs in the worker thread during chunk generation.
+
+- **`calculate_light(terrain_data) -> PackedByteArray`** — Full light calculation for a chunk. Sunlight columns propagate straight down from sky at MAX_LIGHT, then BFS spreads with attenuation. Block-light emission from emissive tiles (via `TileIndex.get_emission()`), then BFS spread.
+- **`continue_light(light_data, terrain_data, sun_seeds, block_seeds) -> PackedByteArray`** — BFS continuation from border seed tiles. Only increases light values (never decreases). Used for cross-chunk border fixup.
+
+### LightManager
+
+`LightManager` (`src/world/lighting/light_manager.gd`) — `RefCounted`, runs on the main thread. Uses a two-phase worklist-based cascading algorithm to propagate light changes across chunk boundaries.
+
+#### Chunk Loading Path
+
+When a chunk finishes building in `_process_build_queue()`:
+
+1. `propagate_border_light(chunk_pos, chunk, neighbors)` imports border light from loaded neighbors into the new chunk
+2. Cascading propagation (Phase 2 only) pushes the new chunk's light outward to neighbors that can benefit
+
+#### Tile Editing Path
+
+When tiles are edited via `set_tiles_at_world_positions()`:
+
+1. `recalculate_chunks_light(positions)` batch-processes all edited chunks:
+   - Snapshots old border values for change detection
+   - Runs `calculate_light()` from scratch for each edited chunk
+   - Imports borders between edited siblings and non-edited neighbors
+   - Rebuilds visual images for all edited chunks
+2. Cascading propagation handles neighbors:
+   - **Phase 1 (darkness):** If borders decreased, neighbors with potentially stale bright values get full recalculation. Cascades outward up to `_MAX_CASCADE_DEPTH=3` (ceil(80/32)).
+   - **Phase 2 (brightness):** BFS pushes higher light from dirty chunks to neighbors via `continue_light()`. Cascades outward if neighbor borders change.
+
+#### Border Snapshots
+
+`_snapshot_borders()` captures 4 × 32 × 2 = 256 bytes per chunk (sun + block for each edge tile). `_decreased_border_offsets()` compares before/after snapshots to identify neighbors needing full recalculation. `_border_changed()` detects any change for light-increase cascading.
+
+### Rendering Integration
+
+Light is encoded in the B channel of the chunk's RGBA8 data image: `B = max(sunlight, blocklight) / MAX_LIGHT`. The terrain shader reads this channel to modulate tile brightness. `_rebuild_chunk_light_image()` creates the full image from terrain + light data.
 
 ## Input Actions
 

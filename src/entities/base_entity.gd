@@ -14,6 +14,9 @@ var velocity: Vector2 = Vector2.ZERO
 ## Unique ID assigned by EntityManager.
 var entity_id: int = -1
 
+## Current chunk position, tracked by EntityManager.
+var chunk_pos: Vector2i = Vector2i.ZERO
+
 ## Optional movement controller for physics-based movement.
 var _movement: MovementController = null
 
@@ -23,7 +26,8 @@ var _movement: MovementController = null
 func entity_process(delta: float) -> void:
 	if _movement:
 		var input = _get_movement_input()
-		position = _movement.move(position, input.x, input.y > 0, delta)
+		var result = _movement.move(position, input.x, input.y > 0, delta)
+		position = result.position
 		velocity = _movement.velocity
 	_entity_update(delta)
 

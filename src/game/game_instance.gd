@@ -18,3 +18,8 @@ func _ready() -> void:
 	_save_manager = WorldSaveManager.new()
 	GameServices.world_save_manager = _save_manager
 	chunk_manager.setup_persistence(_save_manager, "default")
+
+	# Set up lighting
+	var light_mgr = LightManager.new()
+	light_mgr.setup(chunk_manager)
+	GameServices.light_manager = light_mgr
