@@ -23,3 +23,9 @@ func _ready() -> void:
 	var light_mgr = LightManager.new()
 	light_mgr.setup(chunk_manager)
 	GameServices.light_manager = light_mgr
+
+	# Set up dynamic lights
+	var dyn_light_mgr = DynamicLightManager.new()
+	dyn_light_mgr.name = "DynamicLightManager"
+	add_child(dyn_light_mgr)
+	GameServices.dynamic_light_manager = dyn_light_mgr

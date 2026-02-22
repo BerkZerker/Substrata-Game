@@ -22,3 +22,6 @@ var entity_manager: Node = null
 
 ## Reference to the LightManager, set by GameInstance._ready().
 var light_manager: RefCounted = null
+
+## Reference to the DynamicLightManager, set by GameInstance._ready().
+var dynamic_light_manager: Node = null

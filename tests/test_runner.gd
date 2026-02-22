@@ -46,6 +46,7 @@ func _test_game_services() -> void:
 	_assert_true("terrain_generator" in GameServices, "GameServices has terrain_generator property")
 	_assert_true("world_save_manager" in GameServices, "GameServices has world_save_manager property")
 	_assert_true("entity_manager" in GameServices, "GameServices has entity_manager property")
+	_assert_true("dynamic_light_manager" in GameServices, "GameServices has dynamic_light_manager property")
 
 	# In headless test mode, services won't be populated by GameInstance,
 	# but we can verify they accept assignment and return null by default
@@ -75,8 +76,14 @@ func _test_tile_registry() -> void:
 	_assert_eq(TileIndex.GRASS, 2, "GRASS constant is 2")
 	_assert_eq(TileIndex.STONE, 3, "STONE constant is 3")
 
-	# Test tile count (4 default tiles)
-	_assert_eq(TileIndex.get_tile_count(), 4, "Default tile count is 4")
+	# Test extended tile constants
+	_assert_eq(TileIndex.SAND, 4, "SAND constant is 4")
+	_assert_eq(TileIndex.ICE, 8, "ICE constant is 8")
+	_assert_eq(TileIndex.LAVA, 13, "LAVA constant is 13")
+	_assert_eq(TileIndex.VINES, 16, "VINES constant is 16")
+
+	# Test tile count (17 tiles: AIR + 16 material tiles)
+	_assert_eq(TileIndex.get_tile_count(), 17, "Default tile count is 17")
 
 	# Test is_solid
 	_assert_eq(TileIndex.is_solid(TileIndex.AIR), false, "AIR is not solid")
@@ -94,9 +101,9 @@ func _test_tile_registry() -> void:
 
 	# Test get_tile_ids returns sorted array
 	var ids = TileIndex.get_tile_ids()
-	_assert_eq(ids.size(), 4, "get_tile_ids returns 4 IDs")
+	_assert_eq(ids.size(), 17, "get_tile_ids returns 17 IDs")
 	_assert_eq(ids[0], 0, "First tile ID is 0")
-	_assert_eq(ids[3], 3, "Last tile ID is 3")
+	_assert_eq(ids[16], 16, "Last tile ID is 16")
 
 	# Test get_tile_color
 	var air_color = TileIndex.get_tile_color(TileIndex.AIR)
@@ -129,16 +136,25 @@ func _test_tile_registry() -> void:
 	_assert_eq(TileIndex.get_tile_property(999, "friction"), 1.0, "Unknown tile friction returns default")
 	_assert_eq(TileIndex.get_tile_property(TileIndex.DIRT, "friction"), 1.0, "DIRT friction via get_tile_property")
 
-	# Test dynamic registration with properties
-	TileIndex.register_tile(4, "Sand", true, "", Color(0.9, 0.8, 0.5), {"friction": 0.5})
-	_assert_eq(TileIndex.get_tile_count(), 5, "Tile count after registering Sand is 5")
-	_assert_eq(TileIndex.get_tile_name(4), "Sand", "Sand name is correct")
-	_assert_eq(TileIndex.is_solid(4), true, "Sand is solid")
-	_assert_eq(TileIndex.get_friction(4), 0.5, "Sand friction is 0.5 (custom)")
-	_assert_eq(TileIndex.get_damage(4), 0.0, "Sand damage is 0.0 (default)")
+	# Test dynamic registration with properties (use high ID to avoid conflict)
+	TileIndex.register_tile(100, "TestTile", true, "", Color(0.9, 0.8, 0.5), {"friction": 0.5})
+	_assert_eq(TileIndex.get_tile_count(), 18, "Tile count after registering TestTile is 18")
+	_assert_eq(TileIndex.get_tile_name(100), "TestTile", "TestTile name is correct")
+	_assert_eq(TileIndex.is_solid(100), true, "TestTile is solid")
+	_assert_eq(TileIndex.get_friction(100), 0.5, "TestTile friction is 0.5 (custom)")
+	_assert_eq(TileIndex.get_damage(100), 0.0, "TestTile damage is 0.0 (default)")
+
+	# Test extended tile properties
+	_assert_eq(TileIndex.get_friction(TileIndex.ICE), 0.1, "ICE friction is 0.1")
+	_assert_eq(TileIndex.get_damage(TileIndex.LAVA), 10.0, "LAVA damage is 10.0")
+	_assert_eq(TileIndex.get_emission(TileIndex.LAVA), 60, "LAVA emission is 60")
+	_assert_eq(TileIndex.get_speed_modifier(TileIndex.WATER), 0.5, "WATER speed_modifier is 0.5")
+	_assert_eq(TileIndex.get_speed_modifier(TileIndex.DIRT), 1.0, "DIRT speed_modifier is 1.0 (default)")
+	_assert_eq(TileIndex.is_solid(TileIndex.WATER), false, "WATER is not solid")
+	_assert_eq(TileIndex.is_solid(TileIndex.LAVA), false, "LAVA is not solid")
 
 	# Clean up: remove test tile (restore original state for other tests)
-	TileIndex._tiles.erase(4)
+	TileIndex._tiles.erase(100)
 
 	# Test collision solidity (verifies is_solid matches expected for all default tiles)
 	_assert_eq(TileIndex.is_solid(TileIndex.AIR), false, "Collision: AIR is not solid")
@@ -460,6 +476,9 @@ func _test_signal_bus() -> void:
 	_assert_true(SignalBus.has_signal("world_saved"), "SignalBus has world_saved")
 	_assert_true(SignalBus.has_signal("entity_spawned"), "SignalBus has entity_spawned")
 	_assert_true(SignalBus.has_signal("entity_despawned"), "SignalBus has entity_despawned")
+	_assert_true(SignalBus.has_signal("entity_damaged"), "SignalBus has entity_damaged")
+	_assert_true(SignalBus.has_signal("entity_died"), "SignalBus has entity_died")
+	_assert_true(SignalBus.has_signal("entity_healed"), "SignalBus has entity_healed")
 
 	# Test signal emission and reception for tile_changed
 	var received_args = []

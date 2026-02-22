@@ -25,6 +25,7 @@ var is_on_floor: bool = false
 var _collision_detector: CollisionDetector
 var _coyote_timer: float = 0.0
 var _floor_tile_friction: float = 1.0
+var _floor_speed_modifier: float = 1.0
 
 
 func _init(collision_detector: CollisionDetector) -> void:
@@ -43,10 +44,12 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 	# Gravity
 	velocity.y += gravity * delta
 
-	# Horizontal movement with tile friction modifier
+	# Horizontal movement with tile friction and speed modifiers
 	var effective_friction = friction * _floor_tile_friction
+	var effective_speed = speed * _floor_speed_modifier
+	var effective_accel = acceleration * clampf(_floor_tile_friction, 0.3, 1.0)
 	if input_axis != 0:
-		velocity.x = move_toward(velocity.x, input_axis * speed, acceleration * delta)
+		velocity.x = move_toward(velocity.x, input_axis * effective_speed, effective_accel * delta)
 	else:
 		velocity.x = move_toward(velocity.x, 0, effective_friction * delta)
 
@@ -86,7 +89,7 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 	else:
 		is_on_floor = false
 
-	# Determine floor tile and update friction multiplier
+	# Determine floor tile and update friction/speed modifiers
 	var floor_tile_id: int = 0
 	if is_on_floor:
 		var feet_y = current_pos.y + collision_box_size.y * 0.5 + 0.1
@@ -94,8 +97,10 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 		var tile_data = GameServices.chunk_manager.get_tile_at_world_pos(feet_pos)
 		floor_tile_id = tile_data[0]
 		_floor_tile_friction = TileIndex.get_friction(floor_tile_id)
+		_floor_speed_modifier = TileIndex.get_speed_modifier(floor_tile_id)
 	else:
 		_floor_tile_friction = 1.0
+		_floor_speed_modifier = 1.0
 
 	# Check for damage tiles overlapping the entity
 	var tile_damage: float = 0.0

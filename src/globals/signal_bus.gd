@@ -17,3 +17,7 @@ signal entity_despawned(entity: Node2D)
 signal entity_chunk_changed(entity: Node2D, old_chunk: Vector2i, new_chunk: Vector2i)
 
 signal light_level_changed(chunk_pos: Vector2i)
+
+signal entity_damaged(entity_id: int, amount: float, knockback_direction: Vector2)
+signal entity_died(entity_id: int)
+signal entity_healed(entity_id: int, amount: float)

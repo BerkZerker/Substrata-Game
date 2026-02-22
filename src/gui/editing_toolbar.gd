@@ -51,9 +51,11 @@ func _build_brush_type_row(parent: Control) -> void:
 
 
 func _build_material_row(parent: Control) -> void:
-	var row = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 4)
-	parent.add_child(row)
+	var grid = GridContainer.new()
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 2)
+	parent.add_child(grid)
 
 	# Build buttons dynamically from the tile registry
 	var tile_ids = TileIndex.get_tile_ids()
@@ -65,7 +67,7 @@ func _build_material_row(parent: Control) -> void:
 
 		var container = HBoxContainer.new()
 		container.add_theme_constant_override("separation", 2)
-		row.add_child(container)
+		grid.add_child(container)
 
 		var swatch = ColorRect.new()
 		swatch.custom_minimum_size = Vector2(12, 12)

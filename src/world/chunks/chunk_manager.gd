@@ -31,8 +31,9 @@ var _initial_load_complete: bool = false
 
 # Initialization
 func _ready() -> void:
-	# Initialize the terrain generator and threaded loader
-	_terrain_generator = SimplexTerrainGenerator.new(world_seed)
+	# Initialize the biome-aware terrain generator and threaded loader
+	var biome_map := _create_biome_map(world_seed)
+	_terrain_generator = BiomeTerrainGenerator.new(world_seed, biome_map)
 	_chunk_loader = ChunkLoader.new(_terrain_generator)
 
 	# Pre-populate chunk pool to prevent runtime instantiation lag
@@ -43,6 +44,71 @@ func _ready() -> void:
 	
 	# Connect to player movement signals from central SignalBus
 	SignalBus.connect("player_chunk_changed", _on_player_chunk_changed)
+
+
+# Creates the default BiomeMap with predefined biome definitions.
+func _create_biome_map(seed_val: int) -> BiomeMap:
+	var biomes: Array[BiomeDefinition] = []
+
+	# Plains — default gentle terrain
+	biomes.append(BiomeDefinition.new("Plains", {
+		"surface": TileIndex.GRASS,
+		"subsurface": TileIndex.DIRT,
+		"deep": TileIndex.STONE,
+		"cliff": TileIndex.DIRT,
+	}, {}, Color(0.3, 0.7, 0.2)))
+
+	# Desert — flat, sandy
+	biomes.append(BiomeDefinition.new("Desert", {
+		"surface": TileIndex.SAND,
+		"subsurface": TileIndex.SAND,
+		"deep": TileIndex.STONE,
+		"cliff": TileIndex.SAND,
+	}, {
+		"heightmap_amplitude": 40.0,
+		"detail_amplitude": 8.0,
+		"grass_depth": 6,
+		"dirt_depth": 24,
+	}, Color(0.83, 0.66, 0.28)))
+
+	# Tundra — snowy, moderate terrain
+	biomes.append(BiomeDefinition.new("Tundra", {
+		"surface": TileIndex.SNOW,
+		"subsurface": TileIndex.DIRT,
+		"deep": TileIndex.STONE,
+		"cliff": TileIndex.STONE,
+	}, {
+		"heightmap_amplitude": 64.0,
+		"detail_amplitude": 12.0,
+	}, Color(0.9, 0.92, 0.94)))
+
+	# Forest — grass surface, deeper dirt layer
+	biomes.append(BiomeDefinition.new("Forest", {
+		"surface": TileIndex.GRASS,
+		"subsurface": TileIndex.DIRT,
+		"deep": TileIndex.STONE,
+		"cliff": TileIndex.DIRT,
+	}, {
+		"heightmap_amplitude": 80.0,
+		"detail_amplitude": 24.0,
+		"dirt_depth": 28,
+	}, Color(0.15, 0.5, 0.1)))
+
+	# Mountains — extreme amplitude, stone-heavy
+	biomes.append(BiomeDefinition.new("Mountains", {
+		"surface": TileIndex.STONE,
+		"subsurface": TileIndex.STONE,
+		"deep": TileIndex.STONE,
+		"cliff": TileIndex.STONE,
+	}, {
+		"heightmap_amplitude": 180.0,
+		"detail_amplitude": 32.0,
+		"grass_depth": 2,
+		"dirt_depth": 8,
+		"cliff_threshold": 1.0,
+	}, Color(0.5, 0.5, 0.55)))
+
+	return BiomeMap.new(seed_val, biomes)
 
 
 # The main process loop, handles processing the queues each frame
@@ -454,7 +520,10 @@ func save_world() -> void:
 			_save_dirty_chunk(chunk_pos, chunk)
 	_dirty_chunks.clear()
 
-	_save_manager.save_world_meta(_world_name, world_seed, "simplex", {})
+	var gen_name: String = "biome"
+	if _terrain_generator and _terrain_generator.has_method("get_generator_name"):
+		gen_name = _terrain_generator.get_generator_name()
+	_save_manager.save_world_meta(_world_name, world_seed, gen_name, {})
 
 	SignalBus.world_saved.emit()
 

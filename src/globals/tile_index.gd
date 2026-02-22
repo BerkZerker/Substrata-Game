@@ -10,11 +10,24 @@
 ## register_tile() followed by rebuild_texture_array().
 extends Node
 
-# Built-in tile ID constants (backward compatibility)
+# Built-in tile ID constants
 const AIR: int = 0
 const DIRT: int = 1
 const GRASS: int = 2
 const STONE: int = 3
+const SAND: int = 4
+const GRAVEL: int = 5
+const CLAY: int = 6
+const SNOW: int = 7
+const ICE: int = 8
+const COAL_ORE: int = 9
+const IRON_ORE: int = 10
+const GOLD_ORE: int = 11
+const WATER: int = 12
+const LAVA: int = 13
+const FLOWERS: int = 14
+const MUSHROOM: int = 15
+const VINES: int = 16
 
 ## Default values for tile properties. New properties can be added here.
 const DEFAULT_PROPERTIES: Dictionary = {
@@ -24,6 +37,7 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"hardness": 1,
 	"emission": 0,
 	"light_filter": 0,
+	"speed_modifier": 1.0,
 }
 
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
@@ -42,6 +56,22 @@ func _ready() -> void:
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
 	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3, "light_filter": 1})
+
+	# Extended tile set
+	register_tile(SAND, "Sand", true, "res://assets/textures/sand.png", Color(0.83, 0.66, 0.28), {"friction": 0.6})
+	register_tile(GRAVEL, "Gravel", true, "res://assets/textures/gravel.png", Color(0.55, 0.49, 0.42), {"friction": 0.9})
+	register_tile(CLAY, "Clay", true, "res://assets/textures/clay.png", Color(0.63, 0.32, 0.18), {"friction": 1.2, "hardness": 2})
+	register_tile(SNOW, "Snow", true, "res://assets/textures/snow.png", Color(0.94, 0.94, 0.94), {"friction": 0.4})
+	register_tile(ICE, "Ice", true, "res://assets/textures/ice.png", Color(0.66, 0.85, 0.92), {"friction": 0.1, "hardness": 2})
+	register_tile(COAL_ORE, "Coal Ore", true, "res://assets/textures/coal_ore.png", Color(0.29, 0.29, 0.29), {"hardness": 3, "light_filter": 1})
+	register_tile(IRON_ORE, "Iron Ore", true, "res://assets/textures/iron_ore.png", Color(0.48, 0.48, 0.48), {"hardness": 4, "light_filter": 1})
+	register_tile(GOLD_ORE, "Gold Ore", true, "res://assets/textures/gold_ore.png", Color(0.48, 0.48, 0.48), {"hardness": 5, "light_filter": 1})
+	register_tile(WATER, "Water", false, "res://assets/textures/water.png", Color(0.2, 0.6, 0.86), {"transparency": 1.0, "speed_modifier": 0.5})
+	register_tile(LAVA, "Lava", false, "res://assets/textures/lava.png", Color(1.0, 0.27, 0.0), {"damage": 10.0, "emission": 60, "light_filter": 0})
+	register_tile(FLOWERS, "Flowers", false, "res://assets/textures/flowers.png", Color(0.9, 0.4, 0.5), {"transparency": 1.0})
+	register_tile(MUSHROOM, "Mushroom", false, "res://assets/textures/mushroom.png", Color(0.63, 0.32, 0.18), {"transparency": 1.0})
+	register_tile(VINES, "Vines", false, "res://assets/textures/vines.png", Color(0.18, 0.35, 0.15), {"transparency": 0.8})
+
 	rebuild_texture_array()
 
 
@@ -190,6 +220,11 @@ func get_emission(tile_id: int) -> int:
 ## Returns the light filter value for a tile (default 15, meaning full block).
 func get_light_filter(tile_id: int) -> int:
 	return get_tile_property(tile_id, "light_filter")
+
+
+## Returns the speed modifier for a tile (default 1.0).
+func get_speed_modifier(tile_id: int) -> float:
+	return get_tile_property(tile_id, "speed_modifier")
 
 
 # Creates a transparent placeholder image for tiles without textures.
