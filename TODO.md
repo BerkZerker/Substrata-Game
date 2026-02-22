@@ -97,16 +97,25 @@
 - [x] Emissive tiles (emission + light_filter tile properties)
 - [x] Cross-chunk border light propagation
 
+### 12. Dynamic Lights (Shader-Based)
+
+- [ ] `DynamicLightManager` singleton — manages active lights, packs into 1D data texture each frame
+- [ ] Global shader uniform for dynamic light texture (single update per frame, all chunks read it)
+- [ ] Terrain shader: loop over dynamic lights, compute per-tile distance falloff, `max(static, dynamic)`
+- [ ] Quantized falloff in shader for pixel-art style (discrete brightness steps matching tile granularity)
+- [ ] Player torch light (persistent light following player position)
+- [ ] Transient lights (sparks, explosions — short-lived with TTL and fading intensity)
+
 ## Phase 5: Content & Gameplay (Planned)
 
-### 12. Biome System
+### 13. Biome System
 
 - [ ] Biome definition format (tile palette, generator params, spawn rules)
 - [ ] Biome map generation (Voronoi or noise-based region assignment)
 - [ ] Biome-aware terrain generator (swap palettes per biome)
 - [ ] Biome transitions / blending at boundaries
 
-### 13. Expanded Tile Set
+### 14. Expanded Tile Set
 
 - [ ] Sand, Water, Gravel, Clay, Snow, Ice tile types
 - [ ] Ore tiles (Coal, Iron, Gold, etc.)
@@ -114,20 +123,20 @@
 - [ ] Animated tiles (water flow, lava, fire, tree leaves sway)
 - [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
 
-### 14. Health & Damage System
+### 15. Health & Damage System
 
 - [ ] Health component (reusable, attachable to any entity)
 - [ ] Damage sources (fall damage, hazardous tiles, entity attacks)
 - [ ] Death and respawn logic
 - [ ] Invincibility frames / knockback
 
-### 15. Updated Movement Controller
+### 16. Updated Movement Controller
 
 - [ ] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
 - [ ] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
 - [ ] Make sure controller handles walls, slopes, moving platforms, and other complex terrain features
 
-### 16. Tools & Mining
+### 17. Tools & Mining
 
 - [ ] Tool types with mining speed multipliers
 - [ ] Tool durability system
@@ -136,7 +145,7 @@
 
 ## Phase 6: Multiplayer (Planned)
 
-### 17. Multiplayer Support
+### 18. Multiplayer Support
 
 - [ ] Networked entity synchronization (position, state)
 - [ ] Chunk data synchronization on player join
@@ -144,21 +153,21 @@
 
 ## Phase 7: Infrastructure & Tooling (Planned)
 
-### 18. CI / CD
+### 19. CI / CD
 
 - [ ] GitHub Actions workflow for headless test suite
 - [ ] Automated export builds (Linux, Windows, macOS)
 - [ ] Lint / static analysis pass (gdlint or equivalent)
 - [ ] Version tagging and changelog generation
 
-### 19. Performance Profiling
+### 20. Performance Profiling
 
 - [ ] Built-in frame time graph (beyond current debug HUD)
 - [ ] Chunk generation throughput metrics
 - [ ] Memory usage tracking (chunk pool, texture memory)
 - [ ] Bottleneck identification tooling
 
-### 20. Asset Pipeline
+### 21. Asset Pipeline
 
 - [ ] Texture atlas auto-packing (beyond manual Texture2DArray)
 - [ ] Tile definition files (JSON/Resource) instead of code-only registration
