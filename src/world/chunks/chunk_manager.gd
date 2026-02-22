@@ -13,6 +13,11 @@ class_name ChunkManager extends Node2D
 # Chunk Loading & Generation
 var _chunk_loader: ChunkLoader
 
+# Persistence
+var _save_manager: WorldSaveManager
+var _world_name: String = ""
+var _dirty_chunks: Dictionary = {} # { Vector2i: true } — chunks modified since last save
+
 # Main thread state
 var _removal_queue: Array[Chunk] = []
 var _player_region: Vector2i
@@ -20,12 +25,14 @@ var _player_chunk: Vector2i
 var _last_sorted_player_chunk: Vector2i # Track last position queues were sorted for
 var _chunks: Dictionary[Vector2i, Chunk] = {}
 var _chunk_pool: Array[Chunk] = [] # Pool of reusable chunk instances
+var _initial_load_complete: bool = false
 
 
 # Initialization
 func _ready() -> void:
-	# Initialize the threaded loader
-	_chunk_loader = ChunkLoader.new(world_seed)
+	# Initialize the terrain generator and threaded loader
+	var terrain_generator = SimplexTerrainGenerator.new(world_seed)
+	_chunk_loader = ChunkLoader.new(terrain_generator)
 
 	# Pre-populate chunk pool to prevent runtime instantiation lag
 	for i in range(GlobalSettings.MAX_CHUNK_POOL_SIZE):
@@ -77,10 +84,18 @@ func _process_build_queue() -> void:
 		chunk.build(visual_image)
 		_chunks[chunk_pos] = chunk
 		chunks_to_mark_done.append(chunk_pos)
+		SignalBus.chunk_loaded.emit(chunk_pos)
 	
 	# Notify loader that these chunks are finished (so it can clean up tracking)
 	if not chunks_to_mark_done.is_empty():
 		_chunk_loader.mark_chunks_as_processed(chunks_to_mark_done)
+
+	# Emit world_ready once after initial batch of chunks is loaded
+	if not _initial_load_complete and not _chunks.is_empty():
+		var loader_info = _chunk_loader.get_debug_info()
+		if loader_info["generation_queue_size"] == 0 and loader_info["build_queue_size"] == 0 and loader_info["in_progress_size"] == 0:
+			_initial_load_complete = true
+			SignalBus.world_ready.emit()
 
 
 # Processes chunk removals from the removal queue
@@ -134,9 +149,13 @@ func _mark_chunks_for_removal(center_region: Vector2i, removal_radius: int) -> v
 	for chunk_pos in chunks_to_remove:
 		var chunk = _chunks.get(chunk_pos)
 		if chunk != null:
+			# Auto-save dirty chunk before removal
+			if _save_manager and _dirty_chunks.has(chunk_pos):
+				_save_dirty_chunk(chunk_pos, chunk)
 			_chunks.erase(chunk_pos)
 			if not _removal_queue.has(chunk):
 				_removal_queue.append(chunk)
+			SignalBus.chunk_unloaded.emit(chunk_pos)
 
 
 # Queues new chunks for generation based on player region and generation radius
@@ -318,30 +337,42 @@ func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 ## Applies tile changes at multiple world positions, batched by chunk.
 ## changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "cell_id": int }
 func set_tiles_at_world_positions(changes: Array) -> void:
+	# Capture old tile IDs before applying edits (for tile_changed signal)
+	var old_tile_ids: Array = []
+	for change in changes:
+		var tile_data = get_tile_at_world_pos(change["pos"])
+		old_tile_ids.append(tile_data[0])
+
 	var batched_changes = {} # { chunk_pos: [ { "x": int, "y": int, "tile_id": int, "cell_id": int } ] }
-	
+
 	# Group changes by chunk
 	for change in changes:
 		var world_pos = change["pos"]
 		var chunk_pos = world_to_chunk_pos(world_pos)
-		
+
 		if not batched_changes.has(chunk_pos):
 			batched_changes[chunk_pos] = []
-			
+
 		var tile_pos = world_to_tile_pos(world_pos)
-		
+
 		batched_changes[chunk_pos].append({
 			"x": tile_pos.x,
 			"y": tile_pos.y,
 			"tile_id": change["tile_id"],
 			"cell_id": change["cell_id"]
 		})
-	
+
 	# Dispatch batches to chunks
 	for chunk_pos in batched_changes.keys():
 		var chunk = get_chunk_at(chunk_pos)
 		if chunk != null:
 			chunk.edit_tiles(batched_changes[chunk_pos])
+			_dirty_chunks[chunk_pos] = true
+
+	# Emit tile_changed for each change (after data is committed)
+	for i in range(changes.size()):
+		var change = changes[i]
+		SignalBus.tile_changed.emit(change["pos"], old_tile_ids[i], change["tile_id"])
 
 
 ## Returns a snapshot of debug info for the overlay.
@@ -372,7 +403,60 @@ func get_debug_info() -> Dictionary:
 	}
 
 
+# ─── Persistence ─────────────────────────────────────────────────────
+
+
+## Configures the save manager and world name for persistence.
+func setup_persistence(save_manager: WorldSaveManager, world_name: String) -> void:
+	_save_manager = save_manager
+	_world_name = world_name
+
+
+## Saves all dirty chunks and world metadata.
+func save_world() -> void:
+	if not _save_manager or _world_name.is_empty():
+		return
+
+	SignalBus.world_saving.emit()
+
+	for chunk_pos in _dirty_chunks.keys():
+		var chunk = _chunks.get(chunk_pos)
+		if chunk:
+			_save_dirty_chunk(chunk_pos, chunk)
+	_dirty_chunks.clear()
+
+	_save_manager.save_world_meta(_world_name, world_seed, "simplex", {})
+
+	SignalBus.world_saved.emit()
+
+
+## Tries to load saved terrain data for a chunk position.
+## Returns the saved PackedByteArray, or an empty one if no save exists.
+func load_chunk_data(chunk_pos: Vector2i) -> PackedByteArray:
+	if not _save_manager or _world_name.is_empty():
+		return PackedByteArray()
+	return _save_manager.load_chunk(_world_name, chunk_pos)
+
+
+## Returns true if a saved chunk exists at the given position.
+func has_saved_chunk(chunk_pos: Vector2i) -> bool:
+	if not _save_manager or _world_name.is_empty():
+		return false
+	return _save_manager.has_saved_chunk(_world_name, chunk_pos)
+
+
+# Saves a single dirty chunk to disk.
+func _save_dirty_chunk(chunk_pos: Vector2i, chunk: Chunk) -> void:
+	var tile_data = chunk.get_terrain_data()
+	if not tile_data.is_empty():
+		_save_manager.save_chunk(_world_name, chunk_pos, tile_data)
+	_dirty_chunks.erase(chunk_pos)
+
+
 # Cleanup on exit
 func _exit_tree() -> void:
+	# Save dirty chunks before shutdown
+	save_world()
+
 	if _chunk_loader:
 		_chunk_loader.stop()
