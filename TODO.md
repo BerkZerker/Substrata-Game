@@ -120,7 +120,7 @@
 - [x] Sand, Water, Gravel, Clay, Snow, Ice tile types
 - [x] Ore tiles (Coal, Iron, Gold, etc.)
 - [x] Decorative tiles (Flowers, Mushrooms, Vines)
-- [ ] Animated tiles (water flow, lava, fire, tree leaves sway)
+- [x] Animated tiles (water flow, lava, fire, tree leaves sway)
 - [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
 
 ### 15. Health & Damage System
@@ -141,7 +141,7 @@
 - [x] Tool types with mining speed multipliers
 - [x] Tool durability system
 - [x] Tile hardness (time-to-break per tile type)
-- [ ] Mining particles / break animation
+- [x] Mining particles / break animation
 
 ## Phase 6: Multiplayer (Planned)
 
@@ -151,26 +151,26 @@
 - [ ] Chunk data synchronization on player join
 - [ ] LAN multiplayer support with Godot's high-level networking API
 
-## Phase 7: Infrastructure & Tooling (Planned)
+## Phase 7: Infrastructure & Tooling (Mostly Complete)
 
 ### 19. CI / CD
 
-- [ ] GitHub Actions workflow for headless test suite
-- [ ] Automated export builds (Linux, Windows, macOS)
+- [x] GitHub Actions workflow for headless test suite
+- [x] Automated export builds (Linux, Windows, macOS)
 - [ ] Lint / static analysis pass (gdlint or equivalent)
-- [ ] Version tagging and changelog generation
+- [x] Version tagging and changelog generation
 
 ### 20. Performance Profiling
 
-- [ ] Built-in frame time graph (beyond current debug HUD)
-- [ ] Chunk generation throughput metrics
-- [ ] Memory usage tracking (chunk pool, texture memory)
+- [x] Built-in frame time graph (beyond current debug HUD)
+- [x] Chunk generation throughput metrics
+- [x] Memory usage tracking (chunk pool, texture memory)
 - [ ] Bottleneck identification tooling
 
 ### 21. Asset Pipeline
 
 - [ ] Texture atlas auto-packing (beyond manual Texture2DArray)
-- [ ] Tile definition files (JSON/Resource) instead of code-only registration
+- [x] Tile definition files (JSON/Resource) instead of code-only registration
 - [ ] Asset hot-reload support for rapid iteration
 - [ ] Sprite sheet support for animated tiles
 
