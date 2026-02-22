@@ -5,6 +5,7 @@ var _toolbar: EditingToolbar
 var _debug_hud: DebugHUD
 var _cursor_info: CursorInfo
 var _controls_overlay: ControlsOverlay
+var _frame_graph: FrameGraph
 var _brush_preview: Node2D
 var _tool_label: Label
 
@@ -74,6 +75,15 @@ func _setup_components() -> void:
 	_controls_overlay = ControlsOverlay.new()
 	add_child(_controls_overlay)
 
+	# Frame time graph (starts hidden, F7 toggles) — anchored top-right
+	_frame_graph = FrameGraph.new()
+	_frame_graph.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_frame_graph.offset_right = -10
+	_frame_graph.offset_left = -10 - _frame_graph.custom_minimum_size.x
+	_frame_graph.offset_top = 10
+	_frame_graph.offset_bottom = 10 + _frame_graph.custom_minimum_size.y
+	add_child(_frame_graph)
+
 
 func _process(delta: float) -> void:
 	_update_brush_preview()
@@ -140,6 +150,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_cursor_info.visible = not _cursor_info.visible
 	elif event.is_action_pressed("toggle_debug_hud"):
 		_debug_hud.visible = not _debug_hud.visible
+	elif event.is_action_pressed("toggle_frame_graph"):
+		_frame_graph.visible = not _frame_graph.visible
 
 
 func _select_tool(index: int) -> void:
@@ -253,6 +265,10 @@ func _apply_mining(delta: float) -> void:
 	var mined = _mining_system.update(tile_pos, tool, delta)
 
 	if mined:
+		# Spawn mining particles before replacing tile
+		var tile_data = GameServices.chunk_manager.get_tile_at_world_pos(Vector2(tile_pos)) if GameServices.chunk_manager else [0, 0]
+		_spawn_mining_particles(Vector2(tile_pos) + Vector2(0.5, 0.5), tile_data[0])
+
 		# Replace mined tile with AIR
 		var changes = [{
 			"pos": Vector2(tile_pos),
@@ -262,6 +278,38 @@ func _apply_mining(delta: float) -> void:
 		if GameServices.chunk_manager:
 			GameServices.chunk_manager.set_tiles_at_world_positions(changes)
 		_update_tool_label()
+
+
+func _spawn_mining_particles(world_pos: Vector2, tile_id: int) -> void:
+	var particles = CPUParticles2D.new()
+	particles.emitting = true
+	particles.one_shot = true
+	particles.explosiveness = 0.9
+	particles.amount = 12
+	particles.lifetime = 0.5
+
+	# Use the tile's UI color for particle tint
+	var tile_color = TileIndex.get_tile_color(tile_id)
+	particles.color = tile_color
+
+	# Particle motion
+	particles.direction = Vector2(0, -1)
+	particles.spread = 180.0
+	particles.initial_velocity_min = 30.0
+	particles.initial_velocity_max = 80.0
+	particles.gravity = Vector2(0, 200)
+
+	# Small square particles
+	particles.scale_amount_min = 0.5
+	particles.scale_amount_max = 1.5
+
+	# Position at the tile center in world space
+	particles.global_position = world_pos
+	particles.z_index = 50
+
+	# Auto-free after particles finish
+	get_tree().current_scene.add_child(particles)
+	get_tree().create_timer(particles.lifetime + 0.1).timeout.connect(particles.queue_free)
 
 
 func _exit_tree() -> void:

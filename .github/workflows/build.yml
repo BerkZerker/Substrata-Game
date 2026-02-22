@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.6.1"
+  PROJECT_NAME: "Substrata"
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6.1
+
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            preset: "Linux"
+            artifact: "substrata-linux"
+            extension: ".x86_64"
+          - platform: windows
+            preset: "Windows"
+            artifact: "substrata-windows"
+            extension: ".exe"
+          - platform: macos
+            preset: "macOS"
+            artifact: "substrata-macos"
+            extension: ".zip"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup export directories
+        run: mkdir -p "build/${{ matrix.platform }}"
+
+      - name: Import project
+        run: godot --headless --path . --import 2>/dev/null || true
+
+      - name: Export ${{ matrix.platform }}
+        run: |
+          godot --headless --path . \
+            --export-release "${{ matrix.preset }}" \
+            "build/${{ matrix.platform }}/${PROJECT_NAME}${{ matrix.extension }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/${{ matrix.platform }}/
+          retention-days: 30

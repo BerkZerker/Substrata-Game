@@ -16,6 +16,14 @@ var _shutdown_requested: bool = false
 var _generation_paused: bool = false # Backpressure flag when build queue is full
 var _active_task_count: int = 0 # Number of tasks currently running in WorkerThreadPool
 
+# Generation metrics (protected by _mutex)
+var _total_chunks_generated: int = 0
+var _generation_time_accumulator: float = 0.0 # Sum of generation times in seconds
+var _chunks_generated_this_second: int = 0
+var _chunks_per_second: float = 0.0
+var _avg_generation_time_ms: float = 0.0
+var _last_metric_time: int = 0 # msec timestamp of last metric reset
+
 # Synchronization and generation
 var _terrain_generator: BaseTerrainGenerator
 var _mutex: Mutex
@@ -27,6 +35,7 @@ func _init(terrain_generator: BaseTerrainGenerator) -> void:
 	_terrain_generator = terrain_generator
 	_mutex = Mutex.new()
 	_light_propagator = LightPropagator.new()
+	_last_metric_time = Time.get_ticks_msec()
 
 
 ## Adds multiple chunks to the generation queue and submits tasks for processing.
@@ -124,6 +133,9 @@ func get_debug_info() -> Dictionary:
 		"in_progress": _chunks_in_progress.keys(),
 		"in_progress_size": _chunks_in_progress.size(),
 		"active_tasks": _active_task_count,
+		"chunks_per_second": _chunks_per_second,
+		"avg_generation_time_ms": _avg_generation_time_ms,
+		"total_chunks_generated": _total_chunks_generated,
 	}
 	_mutex.unlock()
 	return info
@@ -179,13 +191,27 @@ func _generate_chunk_task(chunk_pos: Vector2i) -> void:
 	_mutex.unlock()
 
 	# Generate terrain data, light data, and visual image (thread-safe, no mutex needed)
+	var gen_start = Time.get_ticks_usec()
 	var terrain_data = _terrain_generator.generate_chunk(chunk_pos)
 	var light_data = _light_propagator.calculate_light(terrain_data)
 	var visual_image = _generate_visual_image(terrain_data, light_data)
+	var gen_elapsed_sec = (Time.get_ticks_usec() - gen_start) / 1_000_000.0
 
 	# Push result to build queue
 	_mutex.lock()
 	_active_task_count -= 1
+
+	# Update generation metrics
+	_generation_time_accumulator += gen_elapsed_sec
+	_total_chunks_generated += 1
+	_chunks_generated_this_second += 1
+	var now_msec = Time.get_ticks_msec()
+	if now_msec - _last_metric_time >= 1000:
+		_chunks_per_second = _chunks_generated_this_second * 1000.0 / float(now_msec - _last_metric_time)
+		if _total_chunks_generated > 0:
+			_avg_generation_time_ms = (_generation_time_accumulator / _total_chunks_generated) * 1000.0
+		_chunks_generated_this_second = 0
+		_last_metric_time = now_msec
 
 	if not _shutdown_requested:
 		_build_queue.append({

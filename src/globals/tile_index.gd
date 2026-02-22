@@ -5,7 +5,8 @@
 ## UI color. The texture array is indexed by tile_id — the shader samples
 ## layer N for tile_id N.
 ##
-## Default tiles (AIR, DIRT, GRASS, STONE) are registered in _ready().
+## Tile definitions are loaded from JSON files in assets/tiles/ at startup.
+## If no JSON files are found, falls back to hardcoded registration in _ready().
 ## Additional tiles can be registered before the game scene loads by calling
 ## register_tile() followed by rebuild_texture_array().
 extends Node
@@ -40,6 +41,9 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"speed_modifier": 1.0,
 }
 
+## Path to the tile definitions JSON directory.
+const TILES_JSON_DIR: String = "res://assets/tiles/"
+
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
 var _tiles: Dictionary = {}
 
@@ -51,13 +55,96 @@ var _texture_size: int = 0
 
 
 func _ready() -> void:
-	# Register the default tile set
+	if not _load_tiles_from_json():
+		_register_default_tiles()
+
+	rebuild_texture_array()
+
+
+## Loads tile definitions from JSON files in TILES_JSON_DIR.
+## Returns true if at least one tile was loaded successfully.
+func _load_tiles_from_json() -> bool:
+	var dir = DirAccess.open(TILES_JSON_DIR)
+	if dir == null:
+		return false
+
+	var json_files: Array[String] = []
+	dir.list_dir_begin()
+	var file_name = dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir() and file_name.ends_with(".json"):
+			json_files.append(TILES_JSON_DIR.path_join(file_name))
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	if json_files.is_empty():
+		return false
+
+	var loaded_any := false
+	for json_path in json_files:
+		var file = FileAccess.open(json_path, FileAccess.READ)
+		if file == null:
+			push_warning("TileIndex: Failed to open %s" % json_path)
+			continue
+
+		var json = JSON.new()
+		var err = json.parse(file.get_as_text())
+		file.close()
+		if err != OK:
+			push_warning("TileIndex: JSON parse error in %s: %s" % [json_path, json.get_error_message()])
+			continue
+
+		var data = json.get_data()
+		if data is Dictionary and data.has("tiles") and data["tiles"] is Array:
+			for tile_def in data["tiles"]:
+				if _register_tile_from_dict(tile_def):
+					loaded_any = true
+		elif data is Array:
+			for tile_def in data:
+				if _register_tile_from_dict(tile_def):
+					loaded_any = true
+		else:
+			push_warning("TileIndex: Unexpected JSON structure in %s" % json_path)
+
+	return loaded_any
+
+
+## Parses a single tile definition dictionary from JSON and registers it.
+## Returns true on success.
+func _register_tile_from_dict(d: Variant) -> bool:
+	if not d is Dictionary:
+		return false
+	if not d.has("id") or not d.has("name"):
+		push_warning("TileIndex: Tile definition missing 'id' or 'name'")
+		return false
+
+	var id: int = int(d["id"])
+	var tile_name: String = str(d["name"])
+	var solid: bool = d.get("solid", false)
+	var texture_path: String = d.get("texture", "")
+
+	# Parse color from [r, g, b] or [r, g, b, a] array
+	var color := Color.WHITE
+	if d.has("color") and d["color"] is Array:
+		var c: Array = d["color"]
+		if c.size() >= 3:
+			var a: float = c[3] if c.size() >= 4 else 1.0
+			color = Color(c[0], c[1], c[2], a)
+
+	var properties: Dictionary = {}
+	if d.has("properties") and d["properties"] is Dictionary:
+		properties = d["properties"]
+
+	register_tile(id, tile_name, solid, texture_path, color, properties)
+	return true
+
+
+## Registers the hardcoded default tile set (fallback when no JSON found).
+func _register_default_tiles() -> void:
 	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0, "light_filter": 0})
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
 	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3, "light_filter": 1})
-
-	# Extended tile set
 	register_tile(SAND, "Sand", true, "res://assets/textures/sand.png", Color(0.83, 0.66, 0.28), {"friction": 0.6})
 	register_tile(GRAVEL, "Gravel", true, "res://assets/textures/gravel.png", Color(0.55, 0.49, 0.42), {"friction": 0.9})
 	register_tile(CLAY, "Clay", true, "res://assets/textures/clay.png", Color(0.63, 0.32, 0.18), {"friction": 1.2, "hardness": 2})
@@ -71,8 +158,6 @@ func _ready() -> void:
 	register_tile(FLOWERS, "Flowers", false, "res://assets/textures/flowers.png", Color(0.9, 0.4, 0.5), {"transparency": 1.0})
 	register_tile(MUSHROOM, "Mushroom", false, "res://assets/textures/mushroom.png", Color(0.63, 0.32, 0.18), {"transparency": 1.0})
 	register_tile(VINES, "Vines", false, "res://assets/textures/vines.png", Color(0.18, 0.35, 0.15), {"transparency": 0.8})
-
-	rebuild_texture_array()
 
 
 ## Registers a tile type. Call rebuild_texture_array() after all registrations.

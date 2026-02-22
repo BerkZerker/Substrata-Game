@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  GODOT_VERSION: "4.6.1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:4.6.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Godot version
+        run: godot --version
+
+      - name: Import project
+        run: godot --headless --path . --import 2>/dev/null || true
+
+      - name: Run tests
+        run: |
+          # Swap main scene to test runner
+          ORIGINAL_LINE=$(grep 'run/main_scene=' project.godot)
+          sed -i 's|run/main_scene=.*|run/main_scene="res://tests/test_runner.tscn"|' project.godot
+
+          # Run headless tests
+          godot --headless --path . --quit-after 5 2>&1
+          TEST_EXIT=$?
+
+          # Restore original main scene
+          sed -i "s|run/main_scene=.*|${ORIGINAL_LINE}|" project.godot
+
+          exit $TEST_EXIT

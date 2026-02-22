@@ -482,6 +482,10 @@ func get_debug_info() -> Dictionary:
 				int(chunk.position.y / chunk_size)
 			))
 
+	# Estimate texture memory: each chunk has a 32x32 RGBA8 image = 4 KiB
+	var chunk_tex_bytes = GlobalSettings.CHUNK_SIZE * GlobalSettings.CHUNK_SIZE * 4
+	var est_texture_memory_kb = (_chunks.size() * chunk_tex_bytes) / 1024.0
+
 	return {
 		"loaded_chunks": _chunks.keys(),
 		"loaded_count": _chunks.size(),
@@ -495,6 +499,14 @@ func get_debug_info() -> Dictionary:
 		"in_progress": loader_info["in_progress"],
 		"in_progress_size": loader_info["in_progress_size"],
 		"active_tasks": loader_info.get("active_tasks", 0),
+		# Pool & memory stats
+		"pool_size": _chunk_pool.size(),
+		"pool_max": GlobalSettings.MAX_CHUNK_POOL_SIZE,
+		"est_texture_memory_kb": est_texture_memory_kb,
+		# Generation metrics (forwarded from loader)
+		"chunks_per_second": loader_info.get("chunks_per_second", 0.0),
+		"avg_generation_time_ms": loader_info.get("avg_generation_time_ms", 0.0),
+		"total_chunks_generated": loader_info.get("total_chunks_generated", 0),
 	}
 
 

@@ -12,7 +12,7 @@ func _ready() -> void:
 
 	var label = Label.new()
 	label.add_theme_font_size_override("font_size", 14)
-	label.text = "=== Controls ===\n\nMovement\n  A / D ........... Move Left / Right\n  Space ........... Jump\n  Scroll .......... Zoom\n\nEditing\n  LMB Hold ........ Paint Terrain\n  1 / 2 / 3 / 4 .. Air / Dirt / Grass / Stone\n  Q / E ........... Brush Size\n\nDebug & UI\n  F1 .............. This Help\n  F2 .............. Cursor Info\n  F3 .............. Debug HUD\n  F4 .............. World Overlay"
+	label.text = "=== Controls ===\n\nMovement\n  A / D ........... Move Left / Right\n  Space ........... Jump\n  Scroll .......... Zoom\n\nEditing\n  LMB Hold ........ Paint Terrain\n  1 / 2 / 3 / 4 .. Air / Dirt / Grass / Stone\n  Q / E ........... Brush Size\n\nDebug & UI\n  F1 .............. This Help\n  F2 .............. Cursor Info\n  F3 .............. Debug HUD\n  F4 .............. World Overlay\n  F7 .............. Frame Graph"
 	add_child(label)
 
 	visible = false
