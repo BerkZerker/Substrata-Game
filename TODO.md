@@ -99,48 +99,48 @@
 
 ### 12. Dynamic Lights (Shader-Based)
 
-- [ ] `DynamicLightManager` singleton — manages active lights, packs into 1D data texture each frame
-- [ ] Global shader uniform for dynamic light texture (single update per frame, all chunks read it)
-- [ ] Terrain shader: loop over dynamic lights, compute per-tile distance falloff, `max(static, dynamic)`
-- [ ] Quantized falloff in shader for pixel-art style (discrete brightness steps matching tile granularity)
-- [ ] Player torch light (persistent light following player position)
-- [ ] Transient lights (sparks, explosions — short-lived with TTL and fading intensity)
+- [x] `DynamicLightManager` singleton — manages active lights, packs into 1D data texture each frame
+- [x] Global shader uniform for dynamic light texture (single update per frame, all chunks read it)
+- [x] Terrain shader: loop over dynamic lights, compute per-tile distance falloff, `max(static, dynamic)`
+- [x] Quantized falloff in shader for pixel-art style (discrete brightness steps matching tile granularity)
+- [x] Player torch light (persistent light following player position)
+- [x] Transient lights (sparks, explosions — short-lived with TTL and fading intensity)
 
-## Phase 5: Content & Gameplay (Planned)
+## Phase 5: Content & Gameplay (Complete)
 
 ### 13. Biome System
 
-- [ ] Biome definition format (tile palette, generator params, spawn rules)
-- [ ] Biome map generation (Voronoi or noise-based region assignment)
-- [ ] Biome-aware terrain generator (swap palettes per biome)
-- [ ] Biome transitions / blending at boundaries
+- [x] Biome definition format (tile palette, generator params, spawn rules)
+- [x] Biome map generation (Voronoi or noise-based region assignment)
+- [x] Biome-aware terrain generator (swap palettes per biome)
+- [x] Biome transitions / blending at boundaries
 
 ### 14. Expanded Tile Set
 
-- [ ] Sand, Water, Gravel, Clay, Snow, Ice tile types
-- [ ] Ore tiles (Coal, Iron, Gold, etc.)
-- [ ] Decorative tiles (Flowers, Mushrooms, Vines)
+- [x] Sand, Water, Gravel, Clay, Snow, Ice tile types
+- [x] Ore tiles (Coal, Iron, Gold, etc.)
+- [x] Decorative tiles (Flowers, Mushrooms, Vines)
 - [ ] Animated tiles (water flow, lava, fire, tree leaves sway)
 - [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
 
 ### 15. Health & Damage System
 
-- [ ] Health component (reusable, attachable to any entity)
-- [ ] Damage sources (fall damage, hazardous tiles, entity attacks)
-- [ ] Death and respawn logic
-- [ ] Invincibility frames / knockback
+- [x] Health component (reusable, attachable to any entity)
+- [x] Damage sources (fall damage, hazardous tiles, entity attacks)
+- [x] Death and respawn logic
+- [x] Invincibility frames / knockback
 
 ### 16. Updated Movement Controller
 
-- [ ] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
-- [ ] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
+- [x] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
+- [x] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
 - [ ] Make sure controller handles walls, slopes, moving platforms, and other complex terrain features
 
 ### 17. Tools & Mining
 
-- [ ] Tool types with mining speed multipliers
-- [ ] Tool durability system
-- [ ] Tile hardness (time-to-break per tile type)
+- [x] Tool types with mining speed multipliers
+- [x] Tool durability system
+- [x] Tile hardness (time-to-break per tile type)
 - [ ] Mining particles / break animation
 
 ## Phase 6: Multiplayer (Planned)
