@@ -9,15 +9,8 @@ class_name Player extends CharacterBody2D
 @export var step_height: float = 6.0
 @export var coyote_time: float = 0.1
 
-# Camera / View
-@export var zoom_amount: float = 0.1
-@export var minimum_zoom: Vector2 = Vector2(0.01, 0.01)
-@export var maximum_zoom: Vector2 = Vector2(10.0, 10.0)
-
 # Collision / World
 @export var collision_box_size: Vector2 = Vector2(10, 16)
-
-@onready var _camera: Camera2D = $Camera2D
 
 var _current_chunk: Vector2i = Vector2i.ZERO
 var _movement: MovementController = null
@@ -65,11 +58,3 @@ func _update_current_chunk() -> void:
 	if new_chunk != _current_chunk:
 		_current_chunk = new_chunk
 		SignalBus.emit_signal("player_chunk_changed", _current_chunk)
-
-
-func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_camera.zoom = (_camera.zoom * (1 + zoom_amount)).clamp(minimum_zoom, maximum_zoom)
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_camera.zoom = (_camera.zoom * (1 - zoom_amount)).clamp(minimum_zoom, maximum_zoom)

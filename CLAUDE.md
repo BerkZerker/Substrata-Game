@@ -42,23 +42,34 @@ Custom **swept AABB** collision detection (`src/physics/collision_detector.gd`) 
 
 Four autoloaded singletons (registered in `project.godot`):
 
-- **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`.
+- **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`, `entity_spawned`, `entity_despawned`.
 - **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
-- **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, and UI color. Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`.
-- **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager` reference, populated by `GameInstance._ready()`. Systems access ChunkManager through this autoload instead of manual wiring.
+- **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, UI color, and properties (friction, damage, transparency, hardness). Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`. Properties use a defaults-merge pattern via `DEFAULT_PROPERTIES`.
+- **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, and `world_save_manager` references, populated by `GameInstance._ready()`.
+
+### Camera System
+
+`CameraController` (`src/camera/camera_controller.gd`) — `extends Camera2D`. Smooth-follow camera decoupled from Player. Uses frame-rate independent lerp (`1.0 - exp(-smoothing * 60.0 * delta)`). Auto-discovers Player target via deferred scene tree lookup. Mouse wheel zoom with configurable step/limits. Z key cycles zoom presets (1x, 2x, 4x, 8x). Scripts using `get_viewport().get_camera_2d()` continue to work since CameraController IS the Camera2D.
+
+### Entity System
+
+- **BaseEntity** (`src/entities/base_entity.gd`) — `extends Node2D`. Base class for game entities with velocity, collision_box_size, optional `MovementController` composition. Virtual methods: `entity_process(delta)`, `_entity_update(delta)`, `_get_movement_input()`.
+- **EntityManager** (`src/entities/entity_manager.gd`) — `extends Node`. Manages entity lifecycle with `spawn()` / `despawn()`. Assigns monotonically increasing IDs. Drives `entity_process()` on all active entities each `_physics_process`. Emits `entity_spawned` / `entity_despawned` via SignalBus.
 
 ### Scene Tree Structure
 
 ```text
 GameInstance (Node)
 ├── Player (CharacterBody2D)
+├── CameraController (Camera2D) — smooth-follow camera
 ├── ChunkManager (Node2D) — owns all Chunk children
+├── EntityManager (Node) — manages spawned entities
 ├── ChunkDebugOverlay (Node2D) — debug visualization (F1-F6 toggles)
 └── UILayer (CanvasLayer)
     └── GUIManager (Control)
 ```
 
-`GameInstance._ready()` registers ChunkManager with `GameServices` and sets up `WorldSaveManager` for persistence. Player and GUIManager access ChunkManager lazily via `GameServices.chunk_manager`.
+`GameInstance._ready()` registers all services (`chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`) with `GameServices` and sets up `WorldSaveManager` for persistence.
 
 ### Persistence
 
@@ -70,7 +81,7 @@ GUI (`src/gui/gui_manager.gd`) captures mouse input → calculates affected tile
 
 ### Player & Movement
 
-`src/entities/player.gd` — Reads input and delegates to `MovementController` (`src/physics/movement_controller.gd`). The movement controller handles gravity, horizontal acceleration/friction, coyote jump, step-up mechanics, and swept AABB collision. It's a reusable `RefCounted` that can be composed into any entity.
+`src/entities/player.gd` — Reads input and delegates to `MovementController` (`src/physics/movement_controller.gd`). The movement controller handles gravity, horizontal acceleration/friction, coyote jump, step-up mechanics, and swept AABB collision. It's a reusable `RefCounted` that can be composed into any entity. Camera is handled separately by `CameraController`.
 
 ## Key Constraints
 

@@ -19,17 +19,49 @@ func _run_all_tests() -> void:
 	print("  Substrata Engine — Test Suite")
 	print("========================================\n")
 
+	_test_game_services()
 	_test_tile_registry()
 	_test_base_terrain_generator()
 	_test_simplex_terrain_generator()
 	_test_chunk_data_format()
 	_test_world_save_manager()
+	_test_camera_controller()
+	_test_entity_system()
 	_test_signal_bus()
 
 	_print_results()
 
 	# Exit with appropriate code
 	get_tree().quit(1 if _failed > 0 else 0)
+
+
+# ─── GameServices Tests ──────────────────────────────────────────────
+
+func _test_game_services() -> void:
+	print("--- GameServices ---")
+
+	# Verify service properties exist
+	_assert_true("chunk_manager" in GameServices, "GameServices has chunk_manager property")
+	_assert_true("tile_registry" in GameServices, "GameServices has tile_registry property")
+	_assert_true("terrain_generator" in GameServices, "GameServices has terrain_generator property")
+	_assert_true("world_save_manager" in GameServices, "GameServices has world_save_manager property")
+	_assert_true("entity_manager" in GameServices, "GameServices has entity_manager property")
+
+	# In headless test mode, services won't be populated by GameInstance,
+	# but we can verify they accept assignment and return null by default
+	_assert_true(GameServices.chunk_manager == null, "chunk_manager is null in test context")
+	_assert_true(GameServices.tile_registry == null, "tile_registry is null in test context")
+	_assert_true(GameServices.terrain_generator == null, "terrain_generator is null in test context")
+	_assert_true(GameServices.world_save_manager == null, "world_save_manager is null in test context")
+	_assert_true(GameServices.entity_manager == null, "entity_manager is null in test context")
+
+	# Test that tile_registry can be set to TileIndex autoload
+	GameServices.tile_registry = TileIndex
+	_assert_true(GameServices.tile_registry != null, "tile_registry accepts TileIndex assignment")
+	_assert_true(GameServices.tile_registry == TileIndex, "tile_registry is TileIndex")
+	GameServices.tile_registry = null # Reset
+
+	print("")
 
 
 # ─── Tile Registry Tests ─────────────────────────────────────────────
@@ -85,14 +117,34 @@ func _test_tile_registry() -> void:
 	_assert_true(tex_array != null, "Texture array is built")
 	_assert_true(tex_array is Texture2DArray, "Texture array is Texture2DArray")
 
-	# Test dynamic registration
-	TileIndex.register_tile(4, "Sand", true, "", Color(0.9, 0.8, 0.5))
+	# Test tile properties
+	_assert_eq(TileIndex.get_friction(TileIndex.DIRT), 1.0, "DIRT friction is 1.0 (default)")
+	_assert_eq(TileIndex.get_damage(TileIndex.DIRT), 0.0, "DIRT damage is 0.0 (default)")
+	_assert_eq(TileIndex.get_transparency(TileIndex.AIR), 0.0, "AIR transparency is 0.0 (custom)")
+	_assert_eq(TileIndex.get_hardness(TileIndex.AIR), 0, "AIR hardness is 0 (custom)")
+	_assert_eq(TileIndex.get_hardness(TileIndex.STONE), 3, "STONE hardness is 3 (custom)")
+	_assert_eq(TileIndex.get_hardness(TileIndex.DIRT), 1, "DIRT hardness is 1 (default)")
+
+	# Test get_tile_property for unknown tile returns default
+	_assert_eq(TileIndex.get_tile_property(999, "friction"), 1.0, "Unknown tile friction returns default")
+	_assert_eq(TileIndex.get_tile_property(TileIndex.DIRT, "friction"), 1.0, "DIRT friction via get_tile_property")
+
+	# Test dynamic registration with properties
+	TileIndex.register_tile(4, "Sand", true, "", Color(0.9, 0.8, 0.5), {"friction": 0.5})
 	_assert_eq(TileIndex.get_tile_count(), 5, "Tile count after registering Sand is 5")
 	_assert_eq(TileIndex.get_tile_name(4), "Sand", "Sand name is correct")
 	_assert_eq(TileIndex.is_solid(4), true, "Sand is solid")
+	_assert_eq(TileIndex.get_friction(4), 0.5, "Sand friction is 0.5 (custom)")
+	_assert_eq(TileIndex.get_damage(4), 0.0, "Sand damage is 0.0 (default)")
 
 	# Clean up: remove test tile (restore original state for other tests)
 	TileIndex._tiles.erase(4)
+
+	# Test collision solidity (verifies is_solid matches expected for all default tiles)
+	_assert_eq(TileIndex.is_solid(TileIndex.AIR), false, "Collision: AIR is not solid")
+	_assert_eq(TileIndex.is_solid(TileIndex.DIRT), true, "Collision: DIRT is solid")
+	_assert_eq(TileIndex.is_solid(TileIndex.GRASS), true, "Collision: GRASS is solid")
+	_assert_eq(TileIndex.is_solid(TileIndex.STONE), true, "Collision: STONE is solid")
 
 	print("")
 
@@ -298,6 +350,101 @@ func _test_world_save_manager() -> void:
 	print("")
 
 
+# ─── Camera Controller Tests ─────────────────────────────────────────
+
+func _test_camera_controller() -> void:
+	print("--- CameraController ---")
+
+	# Test instantiation
+	var cam = CameraController.new()
+	_assert_true(cam is Camera2D, "CameraController extends Camera2D")
+
+	# Test default values
+	_assert_eq(cam.smoothing, 10.0, "Default smoothing is 10.0")
+	_assert_eq(cam.zoom_presets.size(), 4, "Default zoom_presets has 4 entries")
+	_assert_eq(cam.zoom_presets[0], 1.0, "First zoom preset is 1x")
+	_assert_eq(cam.zoom_presets[1], 2.0, "Second zoom preset is 2x")
+	_assert_eq(cam.zoom_presets[2], 4.0, "Third zoom preset is 4x")
+	_assert_eq(cam.zoom_presets[3], 8.0, "Fourth zoom preset is 8x")
+	_assert_eq(cam.zoom_step, 0.1, "Default zoom_step is 0.1")
+
+	# Test zoom preset cycling
+	cam._current_preset_index = 2 # Start at 4x
+	cam._cycle_zoom_preset()
+	_assert_eq(cam.zoom, Vector2(8, 8), "After one cycle: zoom is 8x")
+	cam._cycle_zoom_preset()
+	_assert_eq(cam.zoom, Vector2(1, 1), "After two cycles: zoom wraps to 1x")
+
+	cam.queue_free()
+	print("")
+
+
+# ─── Entity System Tests ─────────────────────────────────────────────
+
+func _test_entity_system() -> void:
+	print("--- Entity System ---")
+
+	# Test BaseEntity defaults
+	var entity = BaseEntity.new()
+	_assert_true(entity is Node2D, "BaseEntity extends Node2D")
+	_assert_eq(entity.velocity, Vector2.ZERO, "BaseEntity default velocity is ZERO")
+	_assert_eq(entity.entity_id, -1, "BaseEntity default entity_id is -1")
+	_assert_eq(entity.collision_box_size, Vector2(10, 16), "BaseEntity default collision_box_size")
+	_assert_eq(entity._get_movement_input(), Vector2.ZERO, "BaseEntity default movement input is ZERO")
+
+	# Test EntityManager spawn/despawn
+	var mgr = EntityManager.new()
+	add_child(mgr) # Must be in tree to add children
+
+	var e1 = BaseEntity.new()
+	var e2 = BaseEntity.new()
+
+	# Track signals
+	var spawned_entities = []
+	var despawned_entities = []
+	var spawn_handler = func(e): spawned_entities.append(e)
+	var despawn_handler = func(e): despawned_entities.append(e)
+	SignalBus.entity_spawned.connect(spawn_handler)
+	SignalBus.entity_despawned.connect(despawn_handler)
+
+	var id1 = mgr.spawn(e1)
+	var id2 = mgr.spawn(e2)
+
+	_assert_eq(id1, 1, "First entity gets ID 1")
+	_assert_eq(id2, 2, "Second entity gets ID 2")
+	_assert_eq(e1.entity_id, 1, "Entity 1 has correct entity_id")
+	_assert_eq(e2.entity_id, 2, "Entity 2 has correct entity_id")
+	_assert_eq(mgr.get_entity_count(), 2, "EntityManager has 2 entities")
+	_assert_true(mgr.get_entity(1) == e1, "get_entity returns correct entity")
+	_assert_eq(spawned_entities.size(), 2, "entity_spawned emitted twice")
+
+	# Test monotonic IDs
+	_assert_true(id2 > id1, "Entity IDs are monotonically increasing")
+
+	# Test despawn
+	mgr.despawn(id1)
+	_assert_eq(mgr.get_entity_count(), 1, "EntityManager has 1 entity after despawn")
+	_assert_true(mgr.get_entity(id1) == null, "Despawned entity is null")
+	_assert_eq(despawned_entities.size(), 1, "entity_despawned emitted once")
+
+	# Test debug info
+	var debug = mgr.get_debug_info()
+	_assert_eq(debug["entity_count"], 1, "Debug info entity_count is 1")
+	_assert_eq(debug["next_id"], 3, "Debug info next_id is 3")
+
+	# Test despawn of nonexistent ID (should not error)
+	mgr.despawn(999)
+	_assert_eq(mgr.get_entity_count(), 1, "Despawn of nonexistent ID has no effect")
+
+	# Cleanup
+	SignalBus.entity_spawned.disconnect(spawn_handler)
+	SignalBus.entity_despawned.disconnect(despawn_handler)
+	mgr.queue_free()
+	entity.queue_free()
+
+	print("")
+
+
 # ─── Signal Bus Tests ────────────────────────────────────────────────
 
 func _test_signal_bus() -> void:
@@ -311,6 +458,8 @@ func _test_signal_bus() -> void:
 	_assert_true(SignalBus.has_signal("world_ready"), "SignalBus has world_ready")
 	_assert_true(SignalBus.has_signal("world_saving"), "SignalBus has world_saving")
 	_assert_true(SignalBus.has_signal("world_saved"), "SignalBus has world_saved")
+	_assert_true(SignalBus.has_signal("entity_spawned"), "SignalBus has entity_spawned")
+	_assert_true(SignalBus.has_signal("entity_despawned"), "SignalBus has entity_despawned")
 
 	# Test signal emission and reception for tile_changed
 	var received_args = []

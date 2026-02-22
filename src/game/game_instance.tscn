@@ -5,6 +5,8 @@
 [ext_resource type="PackedScene" uid="uid://t1pwf87mdupr" path="res://src/world/chunks/chunk_manager.tscn" id="3_c6sqd"]
 [ext_resource type="PackedScene" uid="uid://cfv2uagq51e7l" path="res://src/gui/gui_manager.tscn" id="4_s6sj2"]
 [ext_resource type="Script" uid="uid://ciintan74rvlr" path="res://src/gui/chunk_debug_overlay.gd" id="5_debug"]
+[ext_resource type="Script" path="res://src/camera/camera_controller.gd" id="6_camera"]
+[ext_resource type="Script" path="res://src/entities/entity_manager.gd" id="7_entity"]
 
 [node name="GameInstance" type="Node" unique_id=1375699172]
 script = ExtResource("1_btrx8")
@@ -12,7 +14,14 @@ script = ExtResource("1_btrx8")
 [node name="Player" parent="." unique_id=1398242305 instance=ExtResource("2_s6sj2")]
 position = Vector2(94, -112)
 
+[node name="CameraController" type="Camera2D" parent="."]
+zoom = Vector2(4, 4)
+script = ExtResource("6_camera")
+
 [node name="ChunkManager" parent="." unique_id=1316473437 instance=ExtResource("3_c6sqd")]
+
+[node name="EntityManager" type="Node" parent="."]
+script = ExtResource("7_entity")
 
 [node name="ChunkDebugOverlay" type="Node2D" parent="." unique_id=1381102430]
 script = ExtResource("5_debug")

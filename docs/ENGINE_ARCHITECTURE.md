@@ -8,8 +8,12 @@ Substrata is a 2D voxel engine built in Godot 4.6 (GDScript). It provides proced
 
 ```text
 src/
+├── camera/
+│   └── camera_controller.gd  # Smooth-follow camera with zoom presets
 ├── entities/
-│   ├── player.gd          # Input handling, camera, delegates to MovementController
+│   ├── base_entity.gd        # Base entity class (velocity, collision, MovementController)
+│   ├── entity_manager.gd     # Entity lifecycle: spawn/despawn, ID assignment
+│   ├── player.gd             # Input handling, delegates to MovementController
 │   └── player.tscn
 ├── game/
 │   ├── game_instance.gd   # Root orchestrator, registers services
@@ -47,41 +51,57 @@ src/
 ```text
 GameInstance (Node)
 ├── Player (CharacterBody2D)
-│   ├── Sprite2D
-│   └── Camera2D
+│   └── Sprite2D
+├── CameraController (Camera2D)
 ├── ChunkManager (Node2D)
 │   └── [Chunk instances...]
+├── EntityManager (Node)
+│   └── [BaseEntity instances...]
 ├── ChunkDebugOverlay (Node2D)
 └── UILayer (CanvasLayer)
     └── GUIManager (Control)
 ```
 
-`GameInstance._ready()` registers ChunkManager with `GameServices`. All other systems access it lazily through the service locator.
+`GameInstance._ready()` registers all services with `GameServices`: `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`. All other systems access them lazily through the service locator.
 
 ## Autoloads
 
 | Name           | File                 | Purpose                                                                                          |
 | -------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| SignalBus      | `signal_bus.gd`      | Global event bus. Currently emits `player_chunk_changed`.                                        |
+| SignalBus      | `signal_bus.gd`      | Global event bus. Signals include `player_chunk_changed`, `tile_changed`, `chunk_loaded`/`unloaded`, `world_ready`/`saving`/`saved`, `entity_spawned`/`despawned`. |
 | GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets.                                        |
-| TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with properties and textures. Builds `Texture2DArray` for shader. |
-| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager` reference.                                                |
+| TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with solidity, textures, and properties (friction, damage, transparency, hardness). Builds `Texture2DArray` for shader. |
+| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`. |
 
 ## Tile Registry (TileIndex)
 
 The tile registry is the central authority on tile types. It provides:
 
-- **Registration**: `register_tile(id, name, solid, texture_path, color)` adds a tile type
+- **Registration**: `register_tile(id, name, solid, texture_path, color, properties)` adds a tile type
 - **Queries**: `is_solid(id)`, `get_tile_name(id)`, `get_tile_color(id)`, `get_tile_ids()`
+- **Properties**: `get_tile_property(id, key)`, `get_friction(id)`, `get_damage(id)`, `get_transparency(id)`, `get_hardness(id)`
 - **Rendering**: `get_texture_array()` returns a `Texture2DArray` for the shader
 
-Default tiles (AIR=0, DIRT=1, GRASS=2, STONE=3) are registered in `_ready()`. The constants are preserved for backward compatibility. New tiles can be registered before `_build_texture_array()` is called.
+Default tiles (AIR=0, DIRT=1, GRASS=2, STONE=3) are registered in `_ready()`. The constants are preserved for backward compatibility. New tiles can be registered before `rebuild_texture_array()` is called.
+
+### Tile Properties
+
+Each tile has a `properties` dictionary merged with `DEFAULT_PROPERTIES`:
+
+| Property       | Default | Description                       |
+| -------------- | ------- | --------------------------------- |
+| `friction`     | 1.0     | Surface friction multiplier       |
+| `damage`       | 0.0     | Contact damage per second         |
+| `transparency` | 1.0     | Light transmission (0=opaque)     |
+| `hardness`     | 1       | Mining difficulty                 |
+
+Custom properties are passed as the last argument to `register_tile()`. Missing keys fall back to defaults. To add a new property, add it to `DEFAULT_PROPERTIES` and optionally add a convenience getter.
 
 ### Adding a New Tile
 
 1. Add a texture to `assets/textures/` (must match existing tile texture dimensions)
-2. In `tile_index.gd._ready()`, add: `register_tile(4, "Sand", true, "res://assets/textures/sand.png", Color(0.9, 0.8, 0.5))`
-3. Call `_build_texture_array()` after all registrations
+2. In `tile_index.gd._ready()`, add: `register_tile(4, "Sand", true, "res://assets/textures/sand.png", Color(0.9, 0.8, 0.5), {"friction": 0.5})`
+3. Call `rebuild_texture_array()` after all registrations
 4. The shader, toolbar, and collision system automatically pick up the new tile
 
 ## Threading Model
@@ -184,7 +204,7 @@ Custom swept AABB detection (not Godot physics). `CollisionDetector` sweeps X th
 
 ### Collision → Tile Mapping
 
-`CollisionDetector` queries `ChunkManager.is_solid_at_world_pos()`, which calls `TileIndex.is_solid(tile_id)`. Any tile where `is_solid` returns `true` blocks movement.
+`CollisionDetector` queries `ChunkManager.is_solid_at_world_pos()`, which delegates to `TileIndex.is_solid(tile_id)`. Any tile where `is_solid` returns `true` blocks movement. This decoupling enables future non-solid tiles (water, flowers) without collision changes.
 
 ### MovementController
 
@@ -238,12 +258,52 @@ Mouse input → GUIManager._apply_edit()
 | MAX_CHUNK_POOL_SIZE             | 512     | Chunk pool cap                     |
 | MAX_CONCURRENT_GENERATION_TASKS | 8       | WorkerThreadPool parallelism       |
 
+## Camera System
+
+`CameraController` (`src/camera/camera_controller.gd`) extends `Camera2D`. It is a sibling of `Player` in the scene tree (not a child), enabling independent camera behavior.
+
+### Features
+
+- **Smooth follow**: Frame-rate independent lerp: `weight = 1.0 - exp(-smoothing * 60.0 * delta)`. Configurable `smoothing` export (default 10.0).
+- **Mouse wheel zoom**: Multiplies current zoom by `(1 ± zoom_step)`, clamped to `[min_zoom, max_zoom]`.
+- **Zoom presets**: Z key cycles through `[1x, 2x, 4x, 8x]`. Default starts at 4x.
+- **Target discovery**: Deferred `_find_target()` locates `Player` node via `get_tree().current_scene.get_node_or_null("Player")`.
+
+Since `CameraController` IS the scene's `Camera2D`, existing code using `get_viewport().get_camera_2d()` (GUIManager, CursorInfo, DebugHUD) continues to work.
+
+## Entity System
+
+### BaseEntity
+
+`BaseEntity` (`src/entities/base_entity.gd`) extends `Node2D`. Provides:
+
+- `velocity: Vector2` — current velocity (readable by external systems)
+- `collision_box_size: Vector2` — exported collision dimensions
+- `entity_id: int` — assigned by EntityManager (-1 if unmanaged)
+- `setup_movement(collision_detector)` — initializes optional `MovementController`
+- `entity_process(delta)` — called by EntityManager; runs movement then `_entity_update(delta)`
+- `_entity_update(delta)` — virtual, override for per-entity logic
+- `_get_movement_input() -> Vector2` — virtual, override to supply movement (x=axis, y>0=jump)
+
+### EntityManager
+
+`EntityManager` (`src/entities/entity_manager.gd`) extends `Node`. Manages the entity lifecycle:
+
+- `spawn(entity) -> int` — adds entity as child, assigns monotonic ID, emits `entity_spawned`
+- `despawn(id)` — removes entity, emits `entity_despawned`, frees node
+- `get_entity(id)`, `get_entity_count()`, `get_debug_info()`
+- `_physics_process(delta)` — iterates all entities and calls `entity_process(delta)`
+
+Entity signals are typed as `Node2D` (not `BaseEntity`) on SignalBus to avoid coupling.
+
 ## Input Actions
 
 | Action                     | Key         | System              |
 | -------------------------- | ----------- | ------------------- |
 | move_left/right            | A/D         | Player movement     |
 | jump                       | Space       | Player jump         |
+| zoom presets               | Z           | Cycle camera zoom   |
+| mouse wheel                | Scroll      | Camera zoom in/out  |
 | 1/2/3/4                    | Number keys | Material selection  |
 | Q/E                        | Size keys   | Brush size          |
 | toggle_controls_help       | F1          | Controls overlay    |

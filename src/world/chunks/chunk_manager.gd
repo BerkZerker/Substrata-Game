@@ -12,6 +12,7 @@ class_name ChunkManager extends Node2D
 
 # Chunk Loading & Generation
 var _chunk_loader: ChunkLoader
+var _terrain_generator: RefCounted
 
 # Persistence
 var _save_manager: WorldSaveManager
@@ -31,8 +32,8 @@ var _initial_load_complete: bool = false
 # Initialization
 func _ready() -> void:
 	# Initialize the terrain generator and threaded loader
-	var terrain_generator = SimplexTerrainGenerator.new(world_seed)
-	_chunk_loader = ChunkLoader.new(terrain_generator)
+	_terrain_generator = SimplexTerrainGenerator.new(world_seed)
+	_chunk_loader = ChunkLoader.new(_terrain_generator)
 
 	# Pre-populate chunk pool to prevent runtime instantiation lag
 	for i in range(GlobalSettings.MAX_CHUNK_POOL_SIZE):
@@ -255,6 +256,11 @@ func get_chunk_at(chunk_pos: Vector2i) -> Chunk:
 	return _chunks.get(chunk_pos, null)
 
 
+## Returns the terrain generator used by this ChunkManager.
+func get_terrain_generator() -> RefCounted:
+	return _terrain_generator
+
+
 ## Converts a world position to chunk coordinates.
 func world_to_chunk_pos(world_pos: Vector2) -> Vector2i:
 	return Vector2i(int(floor(world_pos.x / GlobalSettings.CHUNK_SIZE)), int(floor(world_pos.y / GlobalSettings.CHUNK_SIZE)))
@@ -282,7 +288,7 @@ func is_solid_at_world_pos(world_pos: Vector2) -> bool:
 	if chunk == null:
 		return false # Treat unloaded chunks as non-solid
 	var tile_pos = world_to_tile_pos(world_pos)
-	return chunk.get_tile_id_at(tile_pos.x, tile_pos.y) > 0 # Air is 0, anything else is solid
+	return TileIndex.is_solid(chunk.get_tile_id_at(tile_pos.x, tile_pos.y))
 
 
 ## Returns [tile_id, cell_id] at the given world position.

@@ -11,3 +11,6 @@ signal chunk_unloaded(chunk_pos: Vector2i)
 signal world_ready()
 signal world_saving()
 signal world_saved()
+
+signal entity_spawned(entity: Node2D)
+signal entity_despawned(entity: Node2D)

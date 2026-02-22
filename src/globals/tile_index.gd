@@ -16,7 +16,15 @@ const DIRT: int = 1
 const GRASS: int = 2
 const STONE: int = 3
 
-## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color } }
+## Default values for tile properties. New properties can be added here.
+const DEFAULT_PROPERTIES: Dictionary = {
+	"friction": 1.0,
+	"damage": 0.0,
+	"transparency": 1.0,
+	"hardness": 1,
+}
+
+## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
 var _tiles: Dictionary = {}
 
 ## Texture2DArray built from registered tile textures, indexed by tile_id.
@@ -28,22 +36,26 @@ var _texture_size: int = 0
 
 func _ready() -> void:
 	# Register the default tile set
-	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5))
+	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0})
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
-	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5))
+	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3})
 	rebuild_texture_array()
 
 
 ## Registers a tile type. Call rebuild_texture_array() after all registrations.
 ## texture_path: Path to the tile texture, or "" for tiles with no texture (e.g. AIR).
 ## color: UI swatch color for the editing toolbar.
-func register_tile(id: int, tile_name: String, solid: bool, texture_path: String, color: Color = Color.WHITE) -> void:
+## properties: Optional dictionary of tile properties, merged with DEFAULT_PROPERTIES.
+func register_tile(id: int, tile_name: String, solid: bool, texture_path: String, color: Color = Color.WHITE, properties: Dictionary = {}) -> void:
+	var merged_props = DEFAULT_PROPERTIES.duplicate()
+	merged_props.merge(properties, true)
 	_tiles[id] = {
 		"name": tile_name,
 		"solid": solid,
 		"texture_path": texture_path,
 		"color": color,
+		"properties": merged_props,
 	}
 
 
@@ -138,6 +150,34 @@ func get_tile_count() -> int:
 ## Returns the full tile definition dictionary for a tile ID, or null.
 func get_tile_def(tile_id: int):
 	return _tiles.get(tile_id)
+
+
+## Returns a tile property value, or the default if tile/property not found.
+func get_tile_property(tile_id: int, property_name: String):
+	var tile = _tiles.get(tile_id)
+	if tile and tile["properties"].has(property_name):
+		return tile["properties"][property_name]
+	return DEFAULT_PROPERTIES.get(property_name)
+
+
+## Returns the friction value for a tile (default 1.0).
+func get_friction(tile_id: int) -> float:
+	return get_tile_property(tile_id, "friction")
+
+
+## Returns the damage value for a tile (default 0.0).
+func get_damage(tile_id: int) -> float:
+	return get_tile_property(tile_id, "damage")
+
+
+## Returns the transparency value for a tile (default 1.0).
+func get_transparency(tile_id: int) -> float:
+	return get_tile_property(tile_id, "transparency")
+
+
+## Returns the hardness value for a tile (default 1).
+func get_hardness(tile_id: int) -> int:
+	return get_tile_property(tile_id, "hardness")
 
 
 # Creates a transparent placeholder image for tiles without textures.
