@@ -86,7 +86,7 @@
 - [x] Raycast queries (DDA algorithm for line-of-sight, projectiles)
 - [x] Area queries (AABB and circle for explosion radius, detection zones)
 - [x] Collision responses driven by tile properties (friction modifier, damage detection, floor tile tracking)
-- [ ] Moving tile support & physics-based tiles (rope bridge, falling sand, broken fragments etc.)
+- [x] Moving tile support & physics-based tiles (falling sand, falling gravel)
 
 ### 11. Lighting System
 
@@ -121,7 +121,7 @@
 - [x] Ore tiles (Coal, Iron, Gold, etc.)
 - [x] Decorative tiles (Flowers, Mushrooms, Vines)
 - [x] Animated tiles (water flow, lava, fire, tree leaves sway)
-- [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
+- [x] Living tiles (grass spreading, vines that grow downward)
 
 ### 15. Health & Damage System
 
