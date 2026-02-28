@@ -603,6 +603,13 @@ func get_loaded_chunk_positions() -> Array:
 
 ## Queues lighting rebake for the given chunk positions (neighbors queued after results applied).
 func _rebake_lighting_for_chunks(chunk_positions) -> void:
+	# Clear stale light data from all edited chunks before queuing bakes.
+	# This prevents edited neighbors from seeding each other with pre-edit
+	# light values, which would echo between chunks across bake rounds.
+	for chunk_pos in chunk_positions:
+		var chunk = _chunks.get(chunk_pos)
+		if chunk:
+			chunk.clear_baked_light_data()
 	for chunk_pos in chunk_positions:
 		_queue_light_bake(chunk_pos, true)
 

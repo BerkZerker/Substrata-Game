@@ -13,8 +13,10 @@ static var _shared_quad_mesh: QuadMesh
 var _terrain_data: PackedByteArray = PackedByteArray()
 var _terrain_image: Image
 var _data_texture: ImageTexture
+var _light_image: Image
+var _light_texture: ImageTexture
 var _sky_light_data: PackedByteArray = PackedByteArray()
-var _block_light_data: PackedByteArray = PackedByteArray()
+var _block_light_data: Dictionary = {}
 var _mutex: Mutex = Mutex.new()
 
 
@@ -51,12 +53,15 @@ func reset() -> void:
 	_terrain_data.clear()
 	_terrain_image = null
 	_data_texture = null
+	_light_image = null
+	_light_texture = null
 	_sky_light_data.clear()
-	_block_light_data.clear()
+	_block_light_data = {}
 	_mutex.unlock()
 
 	if _visual_mesh.material:
 		_visual_mesh.material.set_shader_parameter("chunk_data_texture", null)
+		_visual_mesh.material.set_shader_parameter("chunk_light_texture", null)
 
 
 # Sets up the mesh and shader data to draw the chunk using a pre-calculated image
@@ -66,6 +71,22 @@ func _setup_visual_mesh(image: Image):
 
 	_data_texture = ImageTexture.create_from_image(image)
 	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
+
+	# Create separate light texture (RGBA8: RGB=block light, A=sky light)
+	# Default: A=255 (full sky light), RGB=0 (no block light)
+	var chunk_size = GlobalSettings.CHUNK_SIZE
+	var light_bytes = PackedByteArray()
+	light_bytes.resize(chunk_size * chunk_size * 4)
+	for i in range(chunk_size * chunk_size):
+		var offset = i * 4
+		light_bytes[offset] = 0       # R (block)
+		light_bytes[offset + 1] = 0   # G (block)
+		light_bytes[offset + 2] = 0   # B (block)
+		light_bytes[offset + 3] = 255 # A (sky = full)
+	_light_image = Image.create_from_data(chunk_size, chunk_size, false, Image.FORMAT_RGBA8, light_bytes)
+	_light_texture = ImageTexture.create_from_image(_light_image)
+	_visual_mesh.material.set_shader_parameter("chunk_light_texture", _light_texture)
+
 	var tile_textures = TileIndex.get_texture_array()
 	if tile_textures:
 		_visual_mesh.material.set_shader_parameter("tile_textures", tile_textures)
@@ -102,12 +123,10 @@ func edit_tiles(changes: Array) -> void:
 		_terrain_data[index] = tile_id
 		_terrain_data[index + 1] = cell_id
 		
-		# Update Visual Image (preserve A=sky light, B=block light channels)
+		# Update Visual Image (light is in separate texture, no read needed)
 		if _terrain_image:
-			# Calculate image Y (inverted relative to data Y in current rendering logic)
 			var image_y = (chunk_size - 1) - y
-			var existing_pixel = _terrain_image.get_pixel(x, image_y)
-			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, cell_id * inv_255, existing_pixel.b, existing_pixel.a))
+			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, cell_id * inv_255, 0.0, 0.0))
 		
 		changed_something = true
 	
@@ -176,36 +195,51 @@ func get_terrain_data() -> PackedByteArray:
 	return data
 
 
-## Updates the A (sky) and B (block) light channels from baked light data.
-## light_result: Dictionary with "sky" and "block" PackedByteArrays (0-15 values).
+## Updates the light texture from baked light data.
+## light_result: Dictionary with "sky" PackedByteArray and "block" Dictionary {"r","g","b"}.
 func update_light_data(light_result: Dictionary) -> void:
 	_mutex.lock()
-	if _terrain_image == null:
+	if _light_image == null:
 		_mutex.unlock()
 		return
 
 	var sky_data: PackedByteArray = light_result["sky"]
-	var block_data: PackedByteArray = light_result["block"]
+	var block_dict: Dictionary = light_result["block"]
 	_sky_light_data = sky_data
-	_block_light_data = block_data
+	_block_light_data = block_dict
+	var block_r: PackedByteArray = block_dict["r"]
+	var block_g: PackedByteArray = block_dict["g"]
+	var block_b: PackedByteArray = block_dict["b"]
 	var chunk_size = GlobalSettings.CHUNK_SIZE
-	var inv_max = 1.0 / float(LightBaker.MAX_LIGHT)
+	var max_light_f = float(LightBaker.MAX_LIGHT)
 
+	# Build light bytes directly — no get_pixel() needed
+	var light_bytes = PackedByteArray()
+	light_bytes.resize(chunk_size * chunk_size * 4)
 	for y in range(chunk_size):
 		# Y-inversion: data row y maps to image row (SIZE-1 - y)
 		var image_y = (chunk_size - 1) - y
 		for x in range(chunk_size):
 			var idx = y * chunk_size + x
-			var sky_level = float(sky_data[idx]) * inv_max
-			var block_level = float(block_data[idx]) * inv_max
+			var sky_val = int(float(sky_data[idx]) / max_light_f * 255.0)
+			var pixel_offset = (image_y * chunk_size + x) * 4
+			light_bytes[pixel_offset] = int(float(block_r[idx]) / max_light_f * 255.0)
+			light_bytes[pixel_offset + 1] = int(float(block_g[idx]) / max_light_f * 255.0)
+			light_bytes[pixel_offset + 2] = int(float(block_b[idx]) / max_light_f * 255.0)
+			light_bytes[pixel_offset + 3] = sky_val
 
-			var pixel = _terrain_image.get_pixel(x, image_y)
-			pixel.a = sky_level
-			pixel.b = block_level
-			_terrain_image.set_pixel(x, image_y, pixel)
-
+	_light_image.set_data(chunk_size, chunk_size, false, Image.FORMAT_RGBA8, light_bytes)
 	_mutex.unlock()
-	_update_visuals()
+
+	_light_texture.update(_light_image)
+
+
+## Clears baked light data so neighbors don't seed from stale values during multi-chunk edits.
+func clear_baked_light_data() -> void:
+	_mutex.lock()
+	_sky_light_data.clear()
+	_block_light_data = {}
+	_mutex.unlock()
 
 
 ## Returns a copy of the baked sky light data. Used by LightBaker for cross-chunk border seeding.
@@ -216,10 +250,18 @@ func get_sky_light_data() -> PackedByteArray:
 	return data
 
 
-## Returns a copy of the baked block light data. Used by LightBaker for cross-chunk border seeding.
-func get_block_light_data() -> PackedByteArray:
+## Returns a copy of the baked block light data as {"r","g","b"} Dictionary.
+## Used by LightBaker for cross-chunk border seeding.
+func get_block_light_data() -> Dictionary:
 	_mutex.lock()
-	var data = _block_light_data.duplicate()
+	if _block_light_data.is_empty():
+		_mutex.unlock()
+		return {}
+	var data = {
+		"r": _block_light_data["r"].duplicate(),
+		"g": _block_light_data["g"].duplicate(),
+		"b": _block_light_data["b"].duplicate(),
+	}
 	_mutex.unlock()
 	return data
 

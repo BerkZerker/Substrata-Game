@@ -1,6 +1,7 @@
 shader_type canvas_item;
 
 uniform sampler2D chunk_data_texture : filter_nearest;
+uniform sampler2D chunk_light_texture : filter_nearest;
 uniform sampler2DArray tile_textures : source_color, repeat_enable, filter_nearest;
 
 uniform vec2 texture_size = vec2(32.0, 32.0);
@@ -28,33 +29,28 @@ void fragment() {
 		discard;
 	}
 
-	// Dual-channel baked lighting: A = sky light, B = block (emissive) light
-	float sky_light = data.a;
-	float block_light = data.b;
+	// Sample light from separate texture: RGB = block light color, A = sky intensity
+	vec4 light_data = texture(chunk_light_texture, UV);
+	vec3 block_rgb = light_data.rgb;
+	float sky_light = light_data.a;
 
-	// Compute dynamic light contribution
-	float dynamic_contrib = 0.0;
-	vec3 dynamic_color_sum = vec3(0.0);
+	// Accumulate dynamic lights as vec3
+	vec3 dynamic_rgb = vec3(0.0);
 	for (int i = 0; i < num_dynamic_lights; i++) {
 		float dist = distance(world_position, dynamic_light_positions[i]);
 		if (dist < dynamic_light_radii[i]) {
 			float falloff = 1.0 - (dist / dynamic_light_radii[i]);
 			falloff = falloff * falloff; // Quadratic falloff
-			float contrib = falloff * dynamic_light_colors[i].a; // alpha = intensity
-			dynamic_contrib += contrib;
-			dynamic_color_sum += dynamic_light_colors[i].rgb * contrib;
+			float intensity = falloff * dynamic_light_colors[i].a;
+			dynamic_rgb += dynamic_light_colors[i].rgb * intensity;
 		}
 	}
 
-	// Sky light modulated by time-of-day ambient, block light is constant
-	float total_light = clamp(max(sky_light * ambient_light, block_light) + dynamic_contrib, 0.0, 1.0);
-	vec3 light_tint = vec3(1.0);
-	if (dynamic_contrib > 0.001) {
-		light_tint = mix(vec3(1.0), dynamic_color_sum / dynamic_contrib, clamp(dynamic_contrib, 0.0, 1.0));
-	}
+	// Combine: sky (modulated by ambient), block light, and dynamic lights
+	vec3 total_light = clamp(max(vec3(sky_light * ambient_light), block_rgb) + dynamic_rgb, 0.0, 1.0);
 
 	// Sample the tile texture from the Texture2DArray at the tile_id layer
 	vec2 tile_uv = world_position / texture_size;
 	vec4 tile_color = texture(tile_textures, vec3(tile_uv, tile_id));
-	COLOR = vec4(tile_color.rgb * total_light * light_tint, tile_color.a);
+	COLOR = vec4(tile_color.rgb * total_light, tile_color.a);
 }

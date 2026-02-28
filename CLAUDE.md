@@ -28,7 +28,11 @@ The core system uses a background thread for chunk generation:
 
 ### Rendering Pipeline
 
-Terrain data flows: `PackedByteArray` → `Image` (RGBA8, R=tile_id, G=cell_id, B=light_level) → `ImageTexture` → fragment shader (`src/world/chunks/terrain.gdshader`) which decodes tile_id, samples a `Texture2DArray` (built by `TileIndex`) at the tile_id layer, and multiplies by the baked light level from the B channel plus dynamic light contributions.
+Two-texture system per chunk:
+- **Data texture** (`chunk_data_texture`): `R=tile_id, G=cell_id` — written by ChunkLoader/edit_tiles
+- **Light texture** (`chunk_light_texture`): `R=block_R, G=block_G, B=block_B, A=sky_intensity` — written by `update_light_data()` via direct byte array (zero `get_pixel()` calls)
+
+Terrain data flows: `PackedByteArray` → `Image` (RGBA8) → `ImageTexture` → fragment shader (`src/world/chunks/terrain.gdshader`) which decodes tile_id from the data texture, samples a `Texture2DArray` (built by `TileIndex`) at the tile_id layer, and combines baked light from the light texture with dynamic light contributions. Light formula: `clamp(max(sky * ambient, block_rgb) + dynamic_rgb, 0, 1)`.
 
 ### Terrain Generation
 
@@ -44,7 +48,7 @@ Four autoloaded singletons (registered in `project.godot`):
 
 - **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`, `entity_spawned`, `entity_despawned`.
 - **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=1296` (calculated from LOD/region dimensions), frame budget limits.
-- **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, UI color, and properties (friction, damage, transparency, hardness, light_emission). Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`. Properties use a defaults-merge pattern via `DEFAULT_PROPERTIES`.
+- **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, UI color, and properties (friction, damage, transparency, hardness, light_emission, emission_color). Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3, LAVA=4, MUSHROOM=5`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`. Properties use a defaults-merge pattern via `DEFAULT_PROPERTIES`.
 - **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager`, `entity_manager`, `light_manager`, `tile_registry`, `terrain_generator`, and `world_save_manager` references, populated by `GameInstance._ready()`.
 
 ### Camera System
@@ -60,7 +64,7 @@ Four autoloaded singletons (registered in `project.godot`):
 
 Three-layer lighting pipeline:
 
-- **LightBaker** (`src/world/lighting/light_baker.gd`) — `RefCounted`. Static per-chunk light bake via BFS flood fill. Sunlight propagates from top (light=MAX_LIGHT in air, blocked by solid). Emissive tiles (including AIR with emission=40) seed from `TileIndex.get_light_emission()`. Cross-chunk border seeding for both sky AND block light from neighbor data. `bake_from_data()` is a pure-computation method that takes snapshot data (terrain, above terrain, neighbor sky/block light) — safe for background threads with zero chunk/scene access. `bake_chunk_light()` is the legacy main-thread version (no callers after background threading). Light baking runs in WorkerThreadPool, managed by ChunkManager: main thread gathers snapshots, submits tasks, applies results budget-limited (MAX_LIGHT_BAKE_RESULTS_PER_FRAME=8). Dedup mechanism handles edits during in-progress bakes.
+- **LightBaker** (`src/world/lighting/light_baker.gd`) — `RefCounted`. Static per-chunk light bake via BFS flood fill. Sunlight propagates from top (light=MAX_LIGHT in air, blocked by solid). Block light is **RGB** — each channel runs a separate BFS pass. Emissive tiles seed per-channel values from `TileIndex.get_light_emission()` scaled by `TileIndex.get_emission_color()`. Cross-chunk border seeding for both sky AND block light (per-channel) from neighbor data. `bake_from_data()` returns `{ "sky": PBA, "block": { "r": PBA, "g": PBA, "b": PBA } }` — safe for background threads with zero chunk/scene access. `bake_chunk_light()` is the legacy main-thread version (no callers after background threading). Light baking runs in WorkerThreadPool, managed by ChunkManager: main thread gathers snapshots, submits tasks, applies results budget-limited (MAX_LIGHT_BAKE_RESULTS_PER_FRAME=8). Dedup mechanism handles edits during in-progress bakes.
 - **LightManager** (`src/world/lighting/light_manager.gd`) — `extends Node`. Manages up to 16 dynamic point lights. Each `_process()`, packages light data into `PackedVector2Array`/`PackedFloat32Array`/`PackedColorArray` and pushes shader uniforms to all loaded chunks. Also drives `TimeOfDay` and updates `ambient_light` uniform.
 - **TimeOfDay** (`src/world/lighting/time_of_day.gd`) — `RefCounted`. Tracks time (0.0=midnight, 0.5=noon). Sine-curve ambient level (0.05–1.0). Default 600s cycle. Owned by LightManager.
 

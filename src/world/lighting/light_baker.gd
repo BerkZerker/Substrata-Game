@@ -13,25 +13,34 @@ func _init(chunk_manager: ChunkManager) -> void:
 	_chunk_manager = chunk_manager
 
 
-## Bakes light for a single chunk. Returns Dictionary with "sky" and "block" PackedByteArrays.
+## Bakes light for a single chunk. Returns Dictionary with "sky" PackedByteArray and "block" Dictionary {"r","g","b"}.
 func bake_chunk_light(chunk_pos: Vector2i) -> Dictionary:
 	var size: int = GlobalSettings.CHUNK_SIZE
+	var total: int = size * size
 	var sky := PackedByteArray()
-	sky.resize(size * size)
+	sky.resize(total)
 	sky.fill(0)
-	var block := PackedByteArray()
-	block.resize(size * size)
-	block.fill(0)
+	var block_r := PackedByteArray()
+	block_r.resize(total)
+	block_r.fill(0)
+	var block_g := PackedByteArray()
+	block_g.resize(total)
+	block_g.fill(0)
+	var block_b := PackedByteArray()
+	block_b.resize(total)
+	block_b.fill(0)
+
+	var empty_block := { "r": block_r, "g": block_g, "b": block_b }
 
 	var chunk = _chunk_manager.get_chunk_at(chunk_pos)
 	if chunk == null:
 		sky.fill(MAX_LIGHT)
-		return { "sky": sky, "block": block }
+		return { "sky": sky, "block": empty_block }
 
 	var terrain_data = chunk.get_terrain_data()
 	if terrain_data.is_empty():
 		sky.fill(MAX_LIGHT)
-		return { "sky": sky, "block": block }
+		return { "sky": sky, "block": empty_block }
 
 	# --- Sky light pass (sunlight propagation) ---
 	var sky_queue: Array = []
@@ -70,8 +79,10 @@ func bake_chunk_light(chunk_pos: Vector2i) -> Dictionary:
 	# BFS flood fill for sky light
 	_flood_fill(sky, sky_queue, size, terrain_data)
 
-	# --- Block light pass (emissive tiles) ---
-	var block_queue: Array = []
+	# --- Block light pass (3-channel RGB from emissive tiles) ---
+	var queue_r: Array = []
+	var queue_g: Array = []
+	var queue_b: Array = []
 
 	for y in range(size):
 		for x in range(size):
@@ -80,13 +91,26 @@ func bake_chunk_light(chunk_pos: Vector2i) -> Dictionary:
 			var tile_id = terrain_data[data_idx]
 			var emission = TileIndex.get_light_emission(tile_id)
 			if emission > 0:
-				block[idx] = emission
-				block_queue.append([idx, emission])
+				var color: Color = TileIndex.get_emission_color(tile_id)
+				var er = int(emission * color.r)
+				var eg = int(emission * color.g)
+				var eb = int(emission * color.b)
+				if er > 0:
+					block_r[idx] = er
+					queue_r.append([idx, er])
+				if eg > 0:
+					block_g[idx] = eg
+					queue_g.append([idx, eg])
+				if eb > 0:
+					block_b[idx] = eb
+					queue_b.append([idx, eb])
 
-	# BFS flood fill for block light
-	_flood_fill(block, block_queue, size, terrain_data)
+	# BFS flood fill for each channel
+	_flood_fill(block_r, queue_r, size, terrain_data)
+	_flood_fill(block_g, queue_g, size, terrain_data)
+	_flood_fill(block_b, queue_b, size, terrain_data)
 
-	return { "sky": sky, "block": block }
+	return { "sky": sky, "block": { "r": block_r, "g": block_g, "b": block_b } }
 
 
 ## Seeds the BFS queue with actual baked light values from adjacent chunk borders.
@@ -153,16 +177,23 @@ func bake_from_data(
 ) -> Dictionary:
 	var size: int = GlobalSettings.CHUNK_SIZE
 
+	var total: int = size * size
 	var sky := PackedByteArray()
-	sky.resize(size * size)
+	sky.resize(total)
 	sky.fill(0)
-	var block := PackedByteArray()
-	block.resize(size * size)
-	block.fill(0)
+	var block_r := PackedByteArray()
+	block_r.resize(total)
+	block_r.fill(0)
+	var block_g := PackedByteArray()
+	block_g.resize(total)
+	block_g.fill(0)
+	var block_b := PackedByteArray()
+	block_b.resize(total)
+	block_b.fill(0)
 
 	if terrain_data.is_empty():
 		sky.fill(MAX_LIGHT)
-		return { "sky": sky, "block": block }
+		return { "sky": sky, "block": { "r": block_r, "g": block_g, "b": block_b } }
 
 	# --- Sky light pass (sunlight propagation) ---
 	var sky_queue: Array = []
@@ -199,8 +230,10 @@ func bake_from_data(
 	# BFS flood fill for sky light
 	_flood_fill(sky, sky_queue, size, terrain_data)
 
-	# --- Block light pass (emissive tiles) ---
-	var block_queue: Array = []
+	# --- Block light pass (3-channel RGB from emissive tiles) ---
+	var queue_r: Array = []
+	var queue_g: Array = []
+	var queue_b: Array = []
 
 	for y in range(size):
 		for x in range(size):
@@ -209,16 +242,38 @@ func bake_from_data(
 			var tile_id = terrain_data[data_idx]
 			var emission = TileIndex.get_light_emission(tile_id)
 			if emission > 0:
-				block[idx] = emission
-				block_queue.append([idx, emission])
+				var color: Color = TileIndex.get_emission_color(tile_id)
+				var er = int(emission * color.r)
+				var eg = int(emission * color.g)
+				var eb = int(emission * color.b)
+				if er > 0:
+					block_r[idx] = er
+					queue_r.append([idx, er])
+				if eg > 0:
+					block_g[idx] = eg
+					queue_g.append([idx, eg])
+				if eb > 0:
+					block_b[idx] = eb
+					queue_b.append([idx, eb])
 
-	# Cross-chunk border seeding for block light
-	_seed_border_from_data(neighbor_block_data, block, block_queue, size)
+	# Cross-chunk border seeding for block light (per channel)
+	var channels = ["r", "g", "b"]
+	var block_arrays = [block_r, block_g, block_b]
+	var block_queues = [queue_r, queue_g, queue_b]
+	for ci in range(3):
+		var ch = channels[ci]
+		var ch_neighbor_data: Dictionary = {}
+		for offset in neighbor_block_data:
+			var n_block_dict: Dictionary = neighbor_block_data[offset]
+			ch_neighbor_data[offset] = n_block_dict[ch]
+		_seed_border_from_data(ch_neighbor_data, block_arrays[ci], block_queues[ci], size)
 
-	# BFS flood fill for block light
-	_flood_fill(block, block_queue, size, terrain_data)
+	# BFS flood fill for each channel
+	_flood_fill(block_r, queue_r, size, terrain_data)
+	_flood_fill(block_g, queue_g, size, terrain_data)
+	_flood_fill(block_b, queue_b, size, terrain_data)
 
-	return { "sky": sky, "block": block }
+	return { "sky": sky, "block": { "r": block_r, "g": block_g, "b": block_b } }
 
 
 ## Seeds the BFS queue from snapshot neighbor data (either sky or block).

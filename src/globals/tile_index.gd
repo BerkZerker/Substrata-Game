@@ -15,6 +15,8 @@ const AIR: int = 0
 const DIRT: int = 1
 const GRASS: int = 2
 const STONE: int = 3
+const LAVA: int = 4
+const MUSHROOM: int = 5
 
 ## Default values for tile properties. New properties can be added here.
 const DEFAULT_PROPERTIES: Dictionary = {
@@ -23,6 +25,7 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"transparency": 1.0,
 	"hardness": 1,
 	"light_emission": 0,
+	"emission_color": Color(1.0, 1.0, 1.0),
 }
 
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
@@ -41,6 +44,10 @@ func _ready() -> void:
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
 	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3})
+	register_tile(LAVA, "Lava", true, "res://assets/textures/lava.png",
+		Color(1.0, 0.3, 0.1), {"light_emission": 20, "emission_color": Color(1.0, 0.4, 0.1)})
+	register_tile(MUSHROOM, "Mushroom", false, "res://assets/textures/mushroom.png",
+		Color(0.2, 0.8, 1.0), {"light_emission": 16, "emission_color": Color(0.2, 0.8, 1.0)})
 	rebuild_texture_array()
 
 
@@ -184,6 +191,11 @@ func get_hardness(tile_id: int) -> int:
 ## Returns the light emission value for a tile (0-15, default 0).
 func get_light_emission(tile_id: int) -> int:
 	return get_tile_property(tile_id, "light_emission")
+
+
+## Returns the emission color for a tile (default white).
+func get_emission_color(tile_id: int) -> Color:
+	return get_tile_property(tile_id, "emission_color")
 
 
 # Creates a transparent placeholder image for tiles without textures.
