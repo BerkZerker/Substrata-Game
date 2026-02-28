@@ -50,6 +50,20 @@ func _try_init_movement() -> bool:
 	return true
 
 
+## Returns the player's current movement velocity vector.
+func get_movement_velocity() -> Vector2:
+	if _movement:
+		return _movement.velocity
+	return Vector2.ZERO
+
+
+## Returns true if the player is on the floor.
+func get_on_floor() -> bool:
+	if _movement:
+		return _movement.is_on_floor
+	return false
+
+
 func _update_current_chunk() -> void:
 	var new_chunk = Vector2i(
 		int(floor(global_position.x / GlobalSettings.CHUNK_SIZE)),
@@ -57,4 +71,4 @@ func _update_current_chunk() -> void:
 	)
 	if new_chunk != _current_chunk:
 		_current_chunk = new_chunk
-		SignalBus.emit_signal("player_chunk_changed", _current_chunk)
+		SignalBus.player_chunk_changed.emit(_current_chunk)

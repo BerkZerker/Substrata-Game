@@ -5,13 +5,14 @@ var _toolbar: EditingToolbar
 var _debug_hud: DebugHUD
 var _cursor_info: CursorInfo
 var _controls_overlay: ControlsOverlay
-var _brush_preview: Node2D
+var _brush_preview: BrushPreview
 
 # State
 var _current_brush_type: int = 0
 var _current_brush_size: int = 2
 var _current_material: int = TileIndex.STONE
 var _is_editing: bool = false
+var _last_edit_tile_pos: Vector2 = Vector2(INF, INF)
 
 # Constants
 const BRUSH_SQUARE = 0
@@ -65,6 +66,7 @@ func _gui_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_is_editing = event.pressed
 			if _is_editing:
+				_last_edit_tile_pos = Vector2(INF, INF)
 				get_viewport().set_input_as_handled()
 
 
@@ -124,10 +126,9 @@ func _on_brush_size_changed(new_size: int) -> void:
 
 
 func _setup_brush_preview() -> void:
-	_brush_preview = Node2D.new()
+	_brush_preview = BrushPreview.new()
 	_brush_preview.z_index = 100
-	_brush_preview.set_script(load("res://src/gui/brush_preview.gd"))
-	_brush_preview.set_meta("gui_manager", self)
+	_brush_preview.setup(self)
 	get_tree().current_scene.add_child.call_deferred(_brush_preview)
 
 
@@ -143,6 +144,11 @@ func _update_brush_preview() -> void:
 func _apply_edit() -> void:
 	var mouse_pos = get_viewport().get_camera_2d().get_global_mouse_position()
 	var center_tile = mouse_pos.floor()
+
+	# Skip if mouse hasn't moved to a new tile position
+	if center_tile == _last_edit_tile_pos:
+		return
+	_last_edit_tile_pos = center_tile
 
 	var changes = []
 	var r = _current_brush_size
@@ -161,8 +167,23 @@ func _apply_edit() -> void:
 				"cell_id": 0
 			})
 
-	if GameServices.chunk_manager:
+	if not changes.is_empty() and GameServices.chunk_manager:
 		GameServices.chunk_manager.set_tiles_at_world_positions(changes)
+
+
+## Returns the current brush type (BRUSH_SQUARE or BRUSH_CIRCLE).
+func get_brush_type() -> int:
+	return _current_brush_type
+
+
+## Returns the current brush size.
+func get_brush_size() -> int:
+	return _current_brush_size
+
+
+## Returns the current material tile ID.
+func get_current_material() -> int:
+	return _current_material
 
 
 func _exit_tree() -> void:

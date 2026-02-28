@@ -34,9 +34,9 @@ func _process(_delta: float) -> void:
 	var pos = _player.global_position
 	lines.append("Pos: (%.1f, %.1f)" % [pos.x, pos.y])
 
-	if _player._movement:
-		var vel = _player._movement.velocity
-		lines.append("Vel: (%.1f, %.1f)  Floor: %s" % [vel.x, vel.y, str(_player._movement.is_on_floor)])
+	if _player.has_method("get_movement_velocity"):
+		var vel = _player.get_movement_velocity()
+		lines.append("Vel: (%.1f, %.1f)  Floor: %s" % [vel.x, vel.y, str(_player.get_on_floor())])
 
 	var camera = get_viewport().get_camera_2d()
 	if camera:

@@ -17,4 +17,4 @@ func _ready() -> void:
 	# Set up persistence
 	_save_manager = WorldSaveManager.new()
 	GameServices.world_save_manager = _save_manager
-	chunk_manager.setup_persistence(_save_manager, "default")
+	chunk_manager.setup_persistence(_save_manager, str(chunk_manager.world_seed))

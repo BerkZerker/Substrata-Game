@@ -4,9 +4,6 @@ signal brush_type_changed(brush_type: int)
 signal material_changed(tile_id: int)
 signal brush_size_changed(new_size: int)
 
-const BRUSH_SQUARE = 0
-const BRUSH_CIRCLE = 1
-
 var _material_buttons: Dictionary = {}
 var _brush_size_label: Label
 var _current_material: int = TileIndex.STONE
@@ -41,12 +38,12 @@ func _build_brush_type_row(parent: Control) -> void:
 
 	var btn_square = Button.new()
 	btn_square.text = "Square"
-	btn_square.pressed.connect(func(): brush_type_changed.emit(BRUSH_SQUARE))
+	btn_square.pressed.connect(func(): brush_type_changed.emit(GUIManager.BRUSH_SQUARE))
 	row.add_child(btn_square)
 
 	var btn_circle = Button.new()
 	btn_circle.text = "Circle"
-	btn_circle.pressed.connect(func(): brush_type_changed.emit(BRUSH_CIRCLE))
+	btn_circle.pressed.connect(func(): brush_type_changed.emit(GUIManager.BRUSH_CIRCLE))
 	row.add_child(btn_circle)
 
 

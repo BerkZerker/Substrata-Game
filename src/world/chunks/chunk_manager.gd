@@ -27,6 +27,8 @@ var _last_sorted_player_chunk: Vector2i # Track last position queues were sorted
 var _chunks: Dictionary[Vector2i, Chunk] = {}
 var _chunk_pool: Array[Chunk] = [] # Pool of reusable chunk instances
 var _initial_load_complete: bool = false
+var _initial_expected_count: int = -1 # Total chunks expected for initial load (-1 = not set)
+var _removal_queue_set: Dictionary = {} # O(1) dedup for removal queue
 
 
 # Initialization
@@ -91,12 +93,10 @@ func _process_build_queue() -> void:
 	if not chunks_to_mark_done.is_empty():
 		_chunk_loader.mark_chunks_as_processed(chunks_to_mark_done)
 
-	# Emit world_ready once after initial batch of chunks is loaded
-	if not _initial_load_complete and not _chunks.is_empty():
-		var loader_info = _chunk_loader.get_debug_info()
-		if loader_info["generation_queue_size"] == 0 and loader_info["build_queue_size"] == 0 and loader_info["in_progress_size"] == 0:
-			_initial_load_complete = true
-			SignalBus.world_ready.emit()
+	# Emit world_ready once after all initial chunks are loaded
+	if not _initial_load_complete and _initial_expected_count > 0 and _chunks.size() >= _initial_expected_count:
+		_initial_load_complete = true
+		SignalBus.world_ready.emit()
 
 
 # Processes chunk removals from the removal queue
@@ -107,6 +107,7 @@ func _process_removal_queue() -> void:
 		if _removal_queue.is_empty():
 			break
 		var chunk = _removal_queue.pop_back()
+		_removal_queue_set.erase(chunk)
 		if is_instance_valid(chunk):
 			_recycle_chunk(chunk)
 		removals_this_frame += 1
@@ -154,8 +155,9 @@ func _mark_chunks_for_removal(center_region: Vector2i, removal_radius: int) -> v
 			if _save_manager and _dirty_chunks.has(chunk_pos):
 				_save_dirty_chunk(chunk_pos, chunk)
 			_chunks.erase(chunk_pos)
-			if not _removal_queue.has(chunk):
+			if not _removal_queue_set.has(chunk):
 				_removal_queue.append(chunk)
+				_removal_queue_set[chunk] = true
 			SignalBus.chunk_unloaded.emit(chunk_pos)
 
 
@@ -163,28 +165,48 @@ func _mark_chunks_for_removal(center_region: Vector2i, removal_radius: int) -> v
 func _queue_chunks_for_generation(center_region: Vector2i, gen_radius: int) -> void:
 	# Collect all chunk positions that need to be generated
 	var chunks_to_queue: Array[Vector2i] = []
-	
+
+	# Record initial expected count on first call
+	if not _initial_load_complete and _initial_expected_count < 0:
+		var gen_diameter = 2 * gen_radius + 1
+		var region_chunks = GlobalSettings.REGION_SIZE * GlobalSettings.REGION_SIZE
+		_initial_expected_count = gen_diameter * gen_diameter * region_chunks
+
 	# Iterate over all regions in generation radius
 	for region_x in range(center_region.x - gen_radius, center_region.x + gen_radius + 1):
 		for region_y in range(center_region.y - gen_radius, center_region.y + gen_radius + 1):
 			# Calculate chunk bounds for this region
 			var chunk_start_x = region_x * GlobalSettings.REGION_SIZE
 			var chunk_start_y = region_y * GlobalSettings.REGION_SIZE
-			
+
 			# Iterate over all chunks in this region
 			for cx in range(chunk_start_x, chunk_start_x + GlobalSettings.REGION_SIZE):
 				for cy in range(chunk_start_y, chunk_start_y + GlobalSettings.REGION_SIZE):
 					var chunk_pos = Vector2i(cx, cy)
-					
+
 					# Skip if already loaded
 					if _chunks.has(chunk_pos):
 						continue
-					
+
+					# Load from saved data if available (bypass worker thread)
+					if has_saved_chunk(chunk_pos):
+						var saved_data = load_chunk_data(chunk_pos)
+						if not saved_data.is_empty():
+							var visual_image = _chunk_loader.generate_visual_image(saved_data)
+							var chunk: Chunk = _get_chunk()
+							if chunk.get_parent() == null:
+								add_child(chunk)
+							chunk.generate(saved_data, chunk_pos)
+							chunk.build(visual_image)
+							_chunks[chunk_pos] = chunk
+							SignalBus.chunk_loaded.emit(chunk_pos)
+							continue
+
 					chunks_to_queue.append(chunk_pos)
-	
-	# Send to loader
+
+	# Send remaining chunks to loader for generation
 	_chunk_loader.add_chunks_to_generation(chunks_to_queue, _player_chunk)
-	
+
 	# Update tracking for smart resorting
 	_last_sorted_player_chunk = _player_chunk
 
@@ -343,16 +365,11 @@ func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 ## Applies tile changes at multiple world positions, batched by chunk.
 ## changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "cell_id": int }
 func set_tiles_at_world_positions(changes: Array) -> void:
-	# Capture old tile IDs before applying edits (for tile_changed signal)
-	var old_tile_ids: Array = []
-	for change in changes:
-		var tile_data = get_tile_at_world_pos(change["pos"])
-		old_tile_ids.append(tile_data[0])
+	var batched_changes = {} # { chunk_pos: [ { "x", "y", "tile_id", "cell_id", "idx" } ] }
 
-	var batched_changes = {} # { chunk_pos: [ { "x": int, "y": int, "tile_id": int, "cell_id": int } ] }
-
-	# Group changes by chunk
-	for change in changes:
+	# Group changes by chunk (single pass)
+	for i in range(changes.size()):
+		var change = changes[i]
 		var world_pos = change["pos"]
 		var chunk_pos = world_to_chunk_pos(world_pos)
 
@@ -365,15 +382,33 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			"x": tile_pos.x,
 			"y": tile_pos.y,
 			"tile_id": change["tile_id"],
-			"cell_id": change["cell_id"]
+			"cell_id": change["cell_id"],
+			"idx": i
 		})
 
-	# Dispatch batches to chunks
+	# Read old tile IDs and apply edits per chunk (2 mutex acquires per chunk)
+	var old_tile_ids: Array = []
+	old_tile_ids.resize(changes.size())
+
 	for chunk_pos in batched_changes.keys():
 		var chunk = get_chunk_at(chunk_pos)
+		var chunk_changes = batched_changes[chunk_pos]
+
 		if chunk != null:
-			chunk.edit_tiles(batched_changes[chunk_pos])
+			# Batch-read old tile IDs (single mutex acquire)
+			var tile_positions: Array[Vector2i] = []
+			for cc in chunk_changes:
+				tile_positions.append(Vector2i(cc["x"], cc["y"]))
+			var old_tiles = chunk.get_tiles(tile_positions)
+			for j in range(chunk_changes.size()):
+				old_tile_ids[chunk_changes[j]["idx"]] = old_tiles[j][0]
+
+			# Apply edits (single mutex acquire)
+			chunk.edit_tiles(chunk_changes)
 			_dirty_chunks[chunk_pos] = true
+		else:
+			for cc in chunk_changes:
+				old_tile_ids[cc["idx"]] = 0
 
 	# Emit tile_changed for each change (after data is committed)
 	for i in range(changes.size()):

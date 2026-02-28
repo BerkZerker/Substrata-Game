@@ -8,6 +8,8 @@ const COLOR_REMOVAL_QUEUE: Color = Color(1.0, 0.0, 1.0, 0.4)
 const COLOR_IN_PROGRESS: Color = Color(0.0, 1.0, 1.0, 0.4)
 
 var _debug_info: Dictionary = {}
+var _frame_counter: int = 0
+const DEBUG_UPDATE_INTERVAL: int = 10
 
 
 func _ready() -> void:
@@ -24,6 +26,10 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	if not GameServices.chunk_manager:
+		return
+
+	_frame_counter += 1
+	if _frame_counter % DEBUG_UPDATE_INTERVAL != 0:
 		return
 
 	_debug_info = GameServices.chunk_manager.get_debug_info()

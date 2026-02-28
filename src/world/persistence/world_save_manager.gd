@@ -14,7 +14,7 @@
 class_name WorldSaveManager extends RefCounted
 
 const SAVE_FORMAT_VERSION: int = 1
-const WORLDS_BASE_PATH: String = "user://worlds/"
+const WORLDS_BASE_PATH: String = "res://data/"
 
 
 # ─── Path Helpers ────────────────────────────────────────────────────────────
@@ -85,6 +85,12 @@ func load_chunk(world_name: String, chunk_pos: Vector2i) -> PackedByteArray:
 
 	var data := file.get_buffer(file.get_length())
 	file.close()
+
+	var expected_size := GlobalSettings.CHUNK_SIZE * GlobalSettings.CHUNK_SIZE * 2
+	if data.size() != expected_size:
+		push_error("WorldSaveManager: Chunk data size mismatch at '%s': got %d, expected %d" % [path, data.size(), expected_size])
+		return PackedByteArray()
+
 	return data
 
 
@@ -233,9 +239,10 @@ func _delete_directory_contents(dir_path: String) -> bool:
 	var entry := dir.get_next()
 	while entry != "":
 		if not dir.current_is_dir():
-			var err := DirAccess.remove_absolute(dir_path + entry)
+			var full_path := dir_path.path_join(entry)
+			var err := DirAccess.remove_absolute(full_path)
 			if err != OK:
-				push_error("WorldSaveManager: Failed to remove '%s%s': %s" % [dir_path, entry, error_string(err)])
+				push_error("WorldSaveManager: Failed to remove '%s': %s" % [full_path, error_string(err)])
 				dir.list_dir_end()
 				return false
 		entry = dir.get_next()

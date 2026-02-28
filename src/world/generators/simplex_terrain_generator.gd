@@ -36,9 +36,23 @@ var _dirt_depth: int
 var _layer_variation: float
 var _cliff_threshold: float
 
+# Cached autoload values (safe for worker thread access)
+var _chunk_size: int
+var _air_id: int
+var _dirt_id: int
+var _grass_id: int
+var _stone_id: int
+
 
 func _init(generation_seed: int, config: Dictionary = {}) -> void:
 	_world_seed = generation_seed
+
+	# Cache autoload values for thread safety
+	_chunk_size = GlobalSettings.CHUNK_SIZE
+	_air_id = TileIndex.AIR
+	_dirt_id = TileIndex.DIRT
+	_grass_id = TileIndex.GRASS
+	_stone_id = TileIndex.STONE
 
 	var cfg = DEFAULT_CONFIG.duplicate()
 	cfg.merge(config, true)
@@ -78,7 +92,7 @@ func get_generator_name() -> String:
 ## Generates terrain data for a chunk at the given chunk position.
 ## Returns a PackedByteArray with 2 bytes per tile: [tile_id, cell_id].
 func generate_chunk(chunk_pos: Vector2i) -> PackedByteArray:
-	var chunk_size = GlobalSettings.CHUNK_SIZE
+	var chunk_size = _chunk_size
 	var data = PackedByteArray()
 	data.resize(chunk_size * chunk_size * 2)
 
@@ -116,21 +130,21 @@ func _get_tile_at(world_x: float, world_y: float, surface_y: float, slope: float
 
 	# Above surface = air
 	if depth < 0:
-		return TileIndex.AIR
+		return _air_id
 
 	var variation = _layer_noise.get_noise_2d(world_x, world_y) * _layer_variation
 
 	# Cliff faces: steep slopes don't grow grass
 	if slope > _cliff_threshold:
 		if depth < _dirt_depth + variation:
-			return TileIndex.DIRT
+			return _dirt_id
 		else:
-			return TileIndex.STONE
+			return _stone_id
 
 	# Normal terrain: always at least 1 grass tile on surface
 	if depth < maxf(1.0, _grass_depth + variation):
-		return TileIndex.GRASS
+		return _grass_id
 	elif depth < _dirt_depth + variation:
-		return TileIndex.DIRT
+		return _dirt_id
 	else:
-		return TileIndex.STONE
+		return _stone_id

@@ -1,7 +1,5 @@
 # Engine Improvement Roadmap
 
-- IMPORTANT - look back at claude cleanup commit and all subsequent commits to make sure all the code writtens since then is good and doesn't need refactoring. If it does, add refactor tasks here and prioritize them before moving on to new features. This will also give me a good idea of what's actually going on with this codebase and where the rough edges are.
-
 ## Phase 1: Core Engine Abstractions (Complete)
 
 ### 1. Data-Driven Tile Registry

@@ -1,15 +1,21 @@
-extends Node2D
+class_name BrushPreview extends Node2D
+
+var _gui_manager: GUIManager
+
+
+func setup(manager: GUIManager) -> void:
+	_gui_manager = manager
+
 
 func _draw() -> void:
-	var manager = get_meta("gui_manager")
-	if not manager:
+	if not _gui_manager:
 		return
 
-	var r = manager._current_brush_size
+	var r = _gui_manager.get_brush_size()
 	var color = Color(1, 1, 1, 0.5)
 
-	if manager._current_brush_type == manager.BRUSH_SQUARE:
+	if _gui_manager.get_brush_type() == GUIManager.BRUSH_SQUARE:
 		var size = r * 2 + 1
 		draw_rect(Rect2(Vector2(-r, -r), Vector2(size, size)), color, false, 1.0)
-	elif manager._current_brush_type == manager.BRUSH_CIRCLE:
+	elif _gui_manager.get_brush_type() == GUIManager.BRUSH_CIRCLE:
 		draw_circle(Vector2.ZERO, r, color, false, 1.0)

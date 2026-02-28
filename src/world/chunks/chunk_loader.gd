@@ -224,6 +224,11 @@ func _generate_visual_image(terrain_data: PackedByteArray) -> Image:
 	return image
 
 
+## Generates a visual image from terrain data. Can be called from any thread.
+func generate_visual_image(terrain_data: PackedByteArray) -> Image:
+	return _generate_visual_image(terrain_data)
+
+
 ## Stops all generation and cleans up. Blocks until all active tasks finish.
 func stop() -> void:
 	_mutex.lock()
@@ -232,14 +237,23 @@ func stop() -> void:
 	_generation_queue.clear()
 	_generation_queue_set.clear()
 	_build_queue.clear()
-	_chunks_in_progress.clear()
 	_mutex.unlock()
 
-	# Wait for all active tasks to finish
+	# Wait for all active tasks to finish (with timeout)
+	var timeout_ms := 2000
+	var elapsed_ms := 0
 	while true:
 		_mutex.lock()
 		var remaining = _active_task_count
 		_mutex.unlock()
 		if remaining == 0:
 			break
+		if elapsed_ms >= timeout_ms:
+			push_warning("ChunkLoader: Timed out waiting for %d active tasks to finish" % remaining)
+			break
 		OS.delay_msec(1)
+		elapsed_ms += 1
+
+	_mutex.lock()
+	_chunks_in_progress.clear()
+	_mutex.unlock()

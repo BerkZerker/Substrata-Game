@@ -39,7 +39,7 @@ func _process(delta: float) -> void:
 	if _target == null:
 		return
 	# Frame-rate independent smoothing: 1.0 - exp(-smoothing * delta)
-	var weight = 1.0 - exp(-smoothing * 60.0 * delta)
+	var weight = 1.0 - exp(-smoothing * delta)
 	global_position = global_position.lerp(_target.global_position, weight)
 
 
@@ -58,6 +58,8 @@ func _input(event: InputEvent) -> void:
 
 
 func _cycle_zoom_preset() -> void:
+	if zoom_presets.is_empty():
+		return
 	_current_preset_index = (_current_preset_index + 1) % zoom_presets.size()
 	var preset = zoom_presets[_current_preset_index]
 	zoom = Vector2(preset, preset)
