@@ -66,12 +66,12 @@ GameInstance (Node)
 
 ## Autoloads
 
-| Name           | File                 | Purpose                                                                                          |
-| -------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| Name           | File                 | Purpose                                                                                                                                                            |
+| -------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | SignalBus      | `signal_bus.gd`      | Global event bus. Signals include `player_chunk_changed`, `tile_changed`, `chunk_loaded`/`unloaded`, `world_ready`/`saving`/`saved`, `entity_spawned`/`despawned`. |
-| GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets.                                        |
-| TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with solidity, textures, and properties (friction, damage, transparency, hardness). Builds `Texture2DArray` for shader. |
-| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`. |
+| GlobalSettings | `global_settings.gd` | Engine constants: chunk size, pool limits, frame budgets.                                                                                                          |
+| TileIndex      | `tile_index.gd`      | Tile registry. Registers tiles with solidity, textures, and properties (friction, damage, transparency, hardness). Builds `Texture2DArray` for shader.             |
+| GameServices   | `game_services.gd`   | Service locator. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, `world_save_manager`.                                              |
 
 ## Tile Registry (TileIndex)
 
@@ -88,12 +88,12 @@ Default tiles (AIR=0, DIRT=1, GRASS=2, STONE=3) are registered in `_ready()`. Th
 
 Each tile has a `properties` dictionary merged with `DEFAULT_PROPERTIES`:
 
-| Property       | Default | Description                       |
-| -------------- | ------- | --------------------------------- |
-| `friction`     | 1.0     | Surface friction multiplier       |
-| `damage`       | 0.0     | Contact damage per second         |
-| `transparency` | 1.0     | Light transmission (0=opaque)     |
-| `hardness`     | 1       | Mining difficulty                 |
+| Property       | Default | Description                   |
+| -------------- | ------- | ----------------------------- |
+| `friction`     | 1.0     | Surface friction multiplier   |
+| `damage`       | 0.0     | Contact damage per second     |
+| `transparency` | 1.0     | Light transmission (0=opaque) |
+| `hardness`     | 1       | Mining difficulty             |
 
 Custom properties are passed as the last argument to `register_tile()`. Missing keys fall back to defaults. To add a new property, add it to `DEFAULT_PROPERTIES` and optionally add a convenience getter.
 
