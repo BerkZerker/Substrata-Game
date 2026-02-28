@@ -22,6 +22,7 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"damage": 0.0,
 	"transparency": 1.0,
 	"hardness": 1,
+	"light_emission": 0,
 }
 
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
@@ -36,7 +37,7 @@ var _texture_size: int = 0
 
 func _ready() -> void:
 	# Register the default tile set
-	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0})
+	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0, "light_emission": 32})
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
 	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3})
@@ -178,6 +179,11 @@ func get_transparency(tile_id: int) -> float:
 ## Returns the hardness value for a tile (default 1).
 func get_hardness(tile_id: int) -> int:
 	return get_tile_property(tile_id, "hardness")
+
+
+## Returns the light emission value for a tile (0-15, default 0).
+func get_light_emission(tile_id: int) -> int:
+	return get_tile_property(tile_id, "light_emission")
 
 
 # Creates a transparent placeholder image for tiles without textures.

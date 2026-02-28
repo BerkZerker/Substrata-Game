@@ -219,7 +219,7 @@ func _generate_visual_image(terrain_data: PackedByteArray) -> Image:
 			var tile_id = float(terrain_data[index])
 			var cell_id = float(terrain_data[index + 1])
 
-			image.set_pixel(x, y, Color(tile_id * inv_255, cell_id * inv_255, 0, 0))
+			image.set_pixel(x, y, Color(tile_id * inv_255, cell_id * inv_255, 0.0, 1.0))
 
 	return image
 

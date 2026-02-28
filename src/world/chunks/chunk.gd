@@ -13,6 +13,8 @@ static var _shared_quad_mesh: QuadMesh
 var _terrain_data: PackedByteArray = PackedByteArray()
 var _terrain_image: Image
 var _data_texture: ImageTexture
+var _sky_light_data: PackedByteArray = PackedByteArray()
+var _block_light_data: PackedByteArray = PackedByteArray()
 var _mutex: Mutex = Mutex.new()
 
 
@@ -49,6 +51,8 @@ func reset() -> void:
 	_terrain_data.clear()
 	_terrain_image = null
 	_data_texture = null
+	_sky_light_data.clear()
+	_block_light_data.clear()
 	_mutex.unlock()
 
 	if _visual_mesh.material:
@@ -98,11 +102,12 @@ func edit_tiles(changes: Array) -> void:
 		_terrain_data[index] = tile_id
 		_terrain_data[index + 1] = cell_id
 		
-		# Update Visual Image
+		# Update Visual Image (preserve A=sky light, B=block light channels)
 		if _terrain_image:
 			# Calculate image Y (inverted relative to data Y in current rendering logic)
 			var image_y = (chunk_size - 1) - y
-			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, cell_id * inv_255, 0, 0))
+			var existing_pixel = _terrain_image.get_pixel(x, image_y)
+			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, cell_id * inv_255, existing_pixel.b, existing_pixel.a))
 		
 		changed_something = true
 	
@@ -169,6 +174,60 @@ func get_terrain_data() -> PackedByteArray:
 	var data = _terrain_data.duplicate()
 	_mutex.unlock()
 	return data
+
+
+## Updates the A (sky) and B (block) light channels from baked light data.
+## light_result: Dictionary with "sky" and "block" PackedByteArrays (0-15 values).
+func update_light_data(light_result: Dictionary) -> void:
+	_mutex.lock()
+	if _terrain_image == null:
+		_mutex.unlock()
+		return
+
+	var sky_data: PackedByteArray = light_result["sky"]
+	var block_data: PackedByteArray = light_result["block"]
+	_sky_light_data = sky_data
+	_block_light_data = block_data
+	var chunk_size = GlobalSettings.CHUNK_SIZE
+	var inv_max = 1.0 / float(LightBaker.MAX_LIGHT)
+
+	for y in range(chunk_size):
+		# Y-inversion: data row y maps to image row (SIZE-1 - y)
+		var image_y = (chunk_size - 1) - y
+		for x in range(chunk_size):
+			var idx = y * chunk_size + x
+			var sky_level = float(sky_data[idx]) * inv_max
+			var block_level = float(block_data[idx]) * inv_max
+
+			var pixel = _terrain_image.get_pixel(x, image_y)
+			pixel.a = sky_level
+			pixel.b = block_level
+			_terrain_image.set_pixel(x, image_y, pixel)
+
+	_mutex.unlock()
+	_update_visuals()
+
+
+## Returns a copy of the baked sky light data. Used by LightBaker for cross-chunk border seeding.
+func get_sky_light_data() -> PackedByteArray:
+	_mutex.lock()
+	var data = _sky_light_data.duplicate()
+	_mutex.unlock()
+	return data
+
+
+## Returns a copy of the baked block light data. Used by LightBaker for cross-chunk border seeding.
+func get_block_light_data() -> PackedByteArray:
+	_mutex.lock()
+	var data = _block_light_data.duplicate()
+	_mutex.unlock()
+	return data
+
+
+## Forwards a shader parameter to the visual mesh material.
+func set_shader_parameter(param_name: StringName, value: Variant) -> void:
+	if _visual_mesh and _visual_mesh.material:
+		_visual_mesh.material.set_shader_parameter(param_name, value)
 
 
 ## Returns just the tile ID at a specific position. Optimized for collision checks.

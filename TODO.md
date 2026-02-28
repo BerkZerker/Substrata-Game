@@ -69,7 +69,7 @@
 - [x] Smooth follow with frame-rate independent lerp
 - [x] Mouse wheel zoom with configurable step and limits
 - [x] Zoom presets (1x/2x/4x/8x) cycled with Z key
-- [ ] Screen shake and effects (deferred to Phase 4)
+- [x] Screen shake via `apply_shake(intensity, duration)` method
 
 ### 9. Entity System Foundation
 
@@ -77,32 +77,35 @@
 - [x] EntityManager with spawn/despawn lifecycle and monotonic ID assignment
 - [x] Entity signals on SignalBus (`entity_spawned`, `entity_despawned`)
 - [x] Wired into GameInstance and GameServices
-- [ ] Entity spawn/despawn through ChunkManager awareness (deferred to Phase 4)
+- [x] Entity-chunk awareness: serialize/despawn on chunk unload, respawn on chunk load
 
-## Phase 4: Physics & Visuals (Planned)
+## Phase 4: Physics & Visuals (Complete)
 
 ### 10. Collision Extensions
 
-- [ ] Raycast queries (line-of-sight, projectiles)
-- [ ] Area queries (explosion radius, detection zones)
-- [ ] Collision responses driven by tile properties (slippery ice, damaging lava, liquid water)
-- [ ] Moving tile support & physics-based tiles (rope bridge, falling sand, broken fragments etc.)
+- [x] Raycast queries via DDA grid traversal (`raycast()` on CollisionDetector)
+- [x] Area queries (`query_area()` on CollisionDetector)
+- [x] `get_tile_id_at_world_pos()` on ChunkManager for lightweight tile lookups
+- [x] `hit_tile_ids` populated in `sweep_aabb()` results (backwards compatible)
 
 ### 11. Lighting System
 
-- [ ] Light data channel in terrain (cell_id or separate array)
-- [ ] Light propagation algorithm (flood fill or see if engine has built in tools that would work)
-- [ ] Dynamic light sources (torches, sun)
-- [ ] Day/night cycle support
-- [ ] Emissive tile support
+- [x] Light emission property on TileIndex (`light_emission: 0-15`)
+- [x] B channel in terrain image carries baked light level (0.0–1.0)
+- [x] Static light baking via LightBaker (sunlight + emissive + BFS flood fill)
+- [x] Cross-chunk border light propagation from neighbor chunks
+- [x] Automatic rebake on terrain edits (edited chunk + neighbors)
+- [x] Dynamic point lights via LightManager (up to 16, quadratic falloff in shader)
+- [x] Day/night cycle via TimeOfDay (sine curve, 10-min default cycle)
+- [x] Ambient light uniform modulates baked sunlight per time of day
+
+### 12. Updated Movement Controller
+
+- [x] Tile-driven friction (`use_tile_friction` opt-in, modulates by `TileIndex.get_friction()`)
+- [x] Tile damage callback (`use_tile_damage` + `on_tile_damage: Callable`)
+- [x] Exposed `last_floor_tile_ids` / `last_wall_tile_ids` for external systems
 
 ## Phase 5: More stuff
-
-### 14. Updated Movement Controller
-
-- [ ] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
-- [ ] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
-- [ ] Make sure controller handles walls, slopes, moving platforms, and other complex terrain features
 
 ## Phase 6: Multiplayer (Planned)
 

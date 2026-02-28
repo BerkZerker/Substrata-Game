@@ -14,6 +14,9 @@ var velocity: Vector2 = Vector2.ZERO
 ## Unique ID assigned by EntityManager.
 var entity_id: int = -1
 
+## Current chunk position, updated each entity_process().
+var current_chunk: Vector2i = Vector2i.ZERO
+
 ## Optional movement controller for physics-based movement.
 var _movement: MovementController = null
 
@@ -26,6 +29,13 @@ func entity_process(delta: float) -> void:
 		position = _movement.move(position, input.x, input.y > 0, delta)
 		velocity = _movement.velocity
 	_entity_update(delta)
+
+	# Update current chunk position
+	var chunk_size = GlobalSettings.CHUNK_SIZE
+	current_chunk = Vector2i(
+		int(floor(global_position.x / chunk_size)),
+		int(floor(global_position.y / chunk_size))
+	)
 
 
 ## Override in subclasses for custom per-frame logic.

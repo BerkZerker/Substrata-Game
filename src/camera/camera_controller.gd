@@ -22,6 +22,11 @@ class_name CameraController extends Camera2D
 var _target: Node2D = null
 var _current_preset_index: int = 2 # Default to 4x
 
+# Screen shake state
+var _shake_intensity: float = 0.0
+var _shake_duration: float = 0.0
+var _shake_timer: float = 0.0
+
 
 func _ready() -> void:
 	zoom = Vector2(4, 4)
@@ -41,6 +46,20 @@ func _process(delta: float) -> void:
 	# Frame-rate independent smoothing: 1.0 - exp(-smoothing * delta)
 	var weight = 1.0 - exp(-smoothing * delta)
 	global_position = global_position.lerp(_target.global_position, weight)
+
+	# Apply screen shake offset
+	if _shake_timer > 0.0:
+		_shake_timer -= delta
+		var decay = _shake_timer / _shake_duration if _shake_duration > 0.0 else 0.0
+		var offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake_intensity * decay
+		global_position += offset
+
+
+## Triggers screen shake. Multiple rapid calls take the higher intensity and reset the timer.
+func apply_shake(intensity: float, duration: float) -> void:
+	_shake_intensity = maxf(_shake_intensity if _shake_timer > 0.0 else 0.0, intensity)
+	_shake_duration = duration
+	_shake_timer = duration
 
 
 func _input(event: InputEvent) -> void:

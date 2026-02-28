@@ -17,6 +17,15 @@ var coyote_time: float = 0.1
 # Collision
 var collision_box_size: Vector2 = Vector2(10, 16)
 
+# Tile interaction opt-ins
+var use_tile_friction: bool = false
+var use_tile_damage: bool = false
+var on_tile_damage: Callable
+
+# Exposed tile ID arrays for external systems
+var last_floor_tile_ids: Array = []
+var last_wall_tile_ids: Array = []
+
 # State (read by the owning entity)
 var velocity: Vector2 = Vector2.ZERO
 var is_on_floor: bool = false
@@ -42,11 +51,19 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 	# Gravity
 	velocity.y += gravity * delta
 
-	# Horizontal movement
+	# Horizontal movement — modulate friction by floor tile properties
+	var effective_friction = friction
+	if use_tile_friction and is_on_floor and not last_floor_tile_ids.is_empty():
+		var avg_friction: float = 0.0
+		for tid in last_floor_tile_ids:
+			avg_friction += TileIndex.get_friction(tid)
+		avg_friction /= last_floor_tile_ids.size()
+		effective_friction = friction * avg_friction
+
 	if input_axis != 0:
 		velocity.x = move_toward(velocity.x, input_axis * speed, acceleration * delta)
 	else:
-		velocity.x = move_toward(velocity.x, 0, friction * delta)
+		velocity.x = move_toward(velocity.x, 0, effective_friction * delta)
 
 	# Jump
 	if jump_pressed and (is_on_floor or _coyote_timer > 0.0):
@@ -71,6 +88,9 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 		if result_x.collided:
 			velocity.x = 0
 
+	# Track wall tile IDs
+	last_wall_tile_ids = result_x.hit_tile_ids
+
 	# Vertical sweep
 	var y_move = Vector2(0, velocity.y * delta)
 	var result_y = _collision_detector.sweep_aabb(current_pos, collision_box_size, y_move)
@@ -81,8 +101,19 @@ func move(current_pos: Vector2, input_axis: float, jump_pressed: bool, delta: fl
 		velocity.y = 0
 		if result_y.normal.y < -0.5:
 			is_on_floor = true
+			last_floor_tile_ids = result_y.hit_tile_ids
 	else:
 		is_on_floor = false
+
+	# Tile damage callback
+	if use_tile_damage and on_tile_damage.is_valid():
+		var all_hit: Array = []
+		all_hit.append_array(last_floor_tile_ids)
+		all_hit.append_array(last_wall_tile_ids)
+		for tid in all_hit:
+			var dmg = TileIndex.get_damage(tid)
+			if dmg > 0.0:
+				on_tile_damage.call(dmg * delta, tid)
 
 	return current_pos
 
