@@ -94,61 +94,25 @@
 - [ ] Light propagation algorithm (flood fill or see if engine has built in tools that would work)
 - [ ] Dynamic light sources (torches, sun)
 - [ ] Day/night cycle support
-- [ ] Emissive tiles (glowing mushrooms, lava)
+- [ ] Emissive tile support
 
-## Phase 5: Content & Gameplay (Planned)
+## Phase 5: More stuff
 
-### 12. Biome System
-
-- [ ] Biome definition format (tile palette, generator params, spawn rules)
-- [ ] Biome map generation (Voronoi or noise-based region assignment)
-- [ ] Biome-aware terrain generator (swap palettes per biome)
-- [ ] Biome transitions / blending at boundaries
-
-### 13. Expanded Tile Set
-
-- [ ] Sand, Water, Gravel, Clay, Snow, Ice tile types
-- [ ] Ore tiles (Coal, Iron, Gold, etc.)
-- [ ] Decorative tiles (Flowers, Mushrooms, Vines)
-- [ ] Animated tiles (water flow, lava, fire, tree leaves sway)
-- [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
-
-### 14. Health & Damage System
-
-- [ ] Health component (reusable, attachable to any entity)
-- [ ] Damage sources (fall damage, hazardous tiles, entity attacks)
-- [ ] Death and respawn logic
-- [ ] Invincibility frames / knockback
-
-### 15. Updated Movement Controller
+### 14. Updated Movement Controller
 
 - [ ] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
 - [ ] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
 - [ ] Make sure controller handles walls, slopes, moving platforms, and other complex terrain features
 
-### 16. Tools & Mining
-
-- [ ] Tool types with mining speed multipliers
-- [ ] Tool durability system
-- [ ] Tile hardness (time-to-break per tile type)
-- [ ] Mining particles / break animation
-
 ## Phase 6: Multiplayer (Planned)
 
-### 17. Multiplayer Support
+### 15. Multiplayer Support
 
 - [ ] Networked entity synchronization (position, state)
 - [ ] Chunk data synchronization on player join
 - [ ] LAN multiplayer support with Godot's high-level networking API
 
 ## Phase 7: Infrastructure & Tooling (Planned)
-
-### 18. CI / CD
-
-- [ ] GitHub Actions workflow for headless test suite
-- [ ] Automated export builds (Linux, Windows, macOS)
-- [ ] Lint / static analysis pass (gdlint or equivalent)
-- [ ] Version tagging and changelog generation
 
 ### 19. Performance Profiling
 
@@ -159,10 +123,7 @@
 
 ### 20. Asset Pipeline
 
-- [ ] Texture atlas auto-packing (beyond manual Texture2DArray)
 - [ ] Tile definition files (JSON/Resource) instead of code-only registration
-- [ ] Asset hot-reload support for rapid iteration
-- [ ] Sprite sheet support for animated tiles
 
 ## Human TODO
 

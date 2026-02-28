@@ -5,7 +5,7 @@
 ## Called from the main thread only — no internal mutex needed.
 ##
 ## Save directory layout:
-##   user://worlds/
+##   res://data/
 ##     {world_name}/
 ##       world_meta.json
 ##       chunks/

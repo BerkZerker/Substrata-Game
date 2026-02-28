@@ -8,7 +8,7 @@ Substrata is a 2D voxel-based game built in **Godot 4.6** using **GDScript**. It
 
 ## Running the Project
 
-Open in Godot 4.6 and press F5. To run headless tests: `./tests/run_tests.sh /path/to/godot`. See `docs/ENGINE_ARCHITECTURE.md` for full engine documentation.
+Open in Godot 4.6 and press F5. See `docs/ENGINE_ARCHITECTURE.md` for full engine documentation.
 
 ## Code Style
 
@@ -23,7 +23,7 @@ Open in Godot 4.6 and press F5. To run headless tests: `./tests/run_tests.sh /pa
 The core system uses a background thread for chunk generation:
 
 - **ChunkManager** (`src/world/chunks/chunk_manager.gd`) — Main thread orchestrator. Monitors player position, queues chunk generation/removal, and processes built chunks each frame (max 16 builds, 32 removals per frame).
-- **ChunkLoader** (`src/world/chunks/chunk_loader.gd`) — Background worker thread. Generates terrain data and visual images off the main thread. Uses Mutex/Semaphore for synchronization with backpressure (pauses when build queue exceeds threshold).
+- **ChunkLoader** (`src/world/chunks/chunk_loader.gd`) — Background worker using WorkerThreadPool. Generates terrain data and visual images off the main thread. Uses Mutex for synchronization with backpressure (pauses when build queue exceeds threshold). Also provides `generate_visual_image()` for main-thread use when loading saved chunks.
 - **Chunk** (`src/world/chunks/chunk.gd`) — Individual chunk with terrain stored as `PackedByteArray` (2 bytes per tile: `[tile_id, cell_id]`). Uses a shared `QuadMesh` and a fragment shader for rendering. Mutex-protected terrain data.
 
 ### Rendering Pipeline
@@ -43,13 +43,13 @@ Custom **swept AABB** collision detection (`src/physics/collision_detector.gd`) 
 Four autoloaded singletons (registered in `project.godot`):
 
 - **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`, `entity_spawned`, `entity_despawned`.
-- **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
+- **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=1296` (calculated from LOD/region dimensions), frame budget limits.
 - **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, UI color, and properties (friction, damage, transparency, hardness). Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`. Properties use a defaults-merge pattern via `DEFAULT_PROPERTIES`.
 - **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, and `world_save_manager` references, populated by `GameInstance._ready()`.
 
 ### Camera System
 
-`CameraController` (`src/camera/camera_controller.gd`) — `extends Camera2D`. Smooth-follow camera decoupled from Player. Uses frame-rate independent lerp (`1.0 - exp(-smoothing * 60.0 * delta)`). Auto-discovers Player target via deferred scene tree lookup. Mouse wheel zoom with configurable step/limits. Z key cycles zoom presets (1x, 2x, 4x, 8x). Scripts using `get_viewport().get_camera_2d()` continue to work since CameraController IS the Camera2D.
+`CameraController` (`src/camera/camera_controller.gd`) — `extends Camera2D`. Smooth-follow camera decoupled from Player. Uses frame-rate independent lerp (`1.0 - exp(-smoothing * delta)`). Auto-discovers Player target via deferred scene tree lookup. Mouse wheel zoom with configurable step/limits. Z key cycles zoom presets (1x, 2x, 4x, 8x). Scripts using `get_viewport().get_camera_2d()` continue to work since CameraController IS the Camera2D.
 
 ### Entity System
 
@@ -64,7 +64,7 @@ GameInstance (Node)
 ├── CameraController (Camera2D) — smooth-follow camera
 ├── ChunkManager (Node2D) — owns all Chunk children
 ├── EntityManager (Node) — manages spawned entities
-├── ChunkDebugOverlay (Node2D) — debug visualization (F1-F6 toggles)
+├── ChunkDebugOverlay (Node2D) — debug visualization (F4-F10 sub-toggles)
 └── UILayer (CanvasLayer)
     └── GUIManager (Control)
 ```
@@ -73,7 +73,7 @@ GameInstance (Node)
 
 ### Persistence
 
-`WorldSaveManager` (`src/world/persistence/world_save_manager.gd`) — `RefCounted` that handles saving/loading world data. Saves world metadata as JSON and chunk terrain data as raw `PackedByteArray` files. Save path: `user://worlds/{name}/`. ChunkManager tracks dirty chunks and auto-saves them on unload and on exit. Only modified chunks are persisted.
+`WorldSaveManager` (`src/world/persistence/world_save_manager.gd`) — `RefCounted` that handles saving/loading world data. Saves world metadata as JSON and chunk terrain data as raw `PackedByteArray` files. Save path: `res://data/{name}/`. ChunkManager tracks dirty chunks and auto-saves them on unload and on exit. On startup, saved chunks are loaded directly on the main thread (bypassing the generation thread). Only modified chunks are persisted. Validates chunk data size on load.
 
 ### Terrain Editing
 
@@ -81,12 +81,12 @@ GUI (`src/gui/gui_manager.gd`) captures mouse input → calculates affected tile
 
 ### Player & Movement
 
-`src/entities/player.gd` — Reads input and delegates to `MovementController` (`src/physics/movement_controller.gd`). The movement controller handles gravity, horizontal acceleration/friction, coyote jump, step-up mechanics, and swept AABB collision. It's a reusable `RefCounted` that can be composed into any entity. Camera is handled separately by `CameraController`.
+`src/entities/player.gd` — Reads input and delegates to `MovementController` (`src/physics/movement_controller.gd`). The movement controller handles gravity, horizontal acceleration/friction, coyote jump, step-up mechanics, and swept AABB collision. It's a reusable `RefCounted` that can be composed into any entity. Player exposes `get_movement_velocity()` and `get_on_floor()` public getters for DebugHUD and other systems. Camera is handled separately by `CameraController`.
 
 ## Key Constraints
 
 - **Thread safety**: Any code that touches chunk terrain data must acquire the chunk's mutex. Terrain generators and ChunkLoader must not call Godot scene tree APIs.
 - **Frame budget**: Chunk builds and removals are capped per frame to prevent stuttering. These limits are in `GlobalSettings`.
-- **Chunk pooling**: Chunks are recycled from a pool (up to `MAX_CHUNK_POOL_SIZE`) to avoid instantiation overhead. Don't create chunk instances directly — use the pool in ChunkManager.
+- **Chunk pooling**: Chunks are recycled from a pool (up to `MAX_CHUNK_POOL_SIZE = 1296`, calculated to match max loaded chunks). Don't create chunk instances directly — use the pool in ChunkManager.
 - **Y-inversion**: The `_generate_visual_image` method in ChunkLoader and the `edit_tiles` method in Chunk both apply Y-inversion when writing to the Image. This is required for correct rendering alignment between the PackedByteArray data layout and Image coordinate system. Do not remove it.
 - **Coordinate convention**: Standard Godot Y-down (`+Y = down`). Gravity is positive (800), jump velocity is negative (-400).

@@ -291,11 +291,11 @@ ChunkManager._process() each frame:
 
 ### Race Condition Analysis
 
-**`stop()` busy-waits on main thread** (`chunk_loader.gd:238-245`): Called from `ChunkManager._exit_tree()`. Blocks main thread with `OS.delay_msec(1)` loop until all workers finish. No timeout — hangs if a generator has an infinite loop.
+**~~`stop()` busy-waits on main thread~~** [RESOLVED]: `stop()` now has a 2-second timeout. Logs a warning and breaks if tasks don't finish in time.
 
 **`_shared_quad_mesh` lazy init** (`chunk.gd:21-25`): Safe today (all `_ready()` calls on main thread), but has no mutex protection. Would race if chunks were ever instantiated from workers.
 
-**`_chunks_in_progress.clear()` during shutdown** (`chunk_loader.gd:233`): Called in `stop()` while tasks may still be between their two mutex acquisitions. Workers will still decrement `_active_task_count` correctly, but the tracking dict is prematurely cleared. Benign today, fragile for future changes.
+**~~`_chunks_in_progress.clear()` during shutdown~~** [RESOLVED]: `_chunks_in_progress.clear()` is now called after the wait loop completes (or times out), under a separate mutex lock.
 
 **`_generate_chunk_task` TOCTOU window** (`chunk_loader.gd:169-203`): Between the first unlock (line 177) and second lock (line 184), `stop()` could set `_shutdown_requested`. The guard at line 187 handles this correctly, but the two-phase lock pattern is non-obvious and undocumented.
 
@@ -386,10 +386,14 @@ save_world():
        → JSON.stringify({seed, generator, version, timestamps})
   → SignalBus.world_saved.emit()
 
-Load: *** NOT IMPLEMENTED ***
-  ChunkManager has load_chunk_data() and has_saved_chunk() methods,
-  but these are NEVER CALLED. ChunkLoader generates ALL chunks fresh.
-  Saved edits are written to disk but never restored on load.
+Load: [RESOLVED — now implemented]
+  ChunkManager._queue_chunks_for_generation() checks has_saved_chunk()
+  for each chunk position before queuing generation:
+    → WorldSaveManager.load_chunk(name, pos) → PackedByteArray
+    → validates data size (CHUNK_SIZE² × 2, rejects mismatches)
+    → ChunkLoader.generate_visual_image(data) → Image (main thread)
+    → chunk.generate(data, pos) + chunk.build(image)
+  Saved chunks bypass the worker thread — loaded directly on main thread.
 ```
 
 ### Input Pipeline
@@ -406,8 +410,7 @@ Camera:    Mouse wheel / Z → CameraController._input()
 Editing:   Mouse LMB → GUIManager._gui_input() → _is_editing flag
   → _process() → _apply_edit() → ChunkManager.set_tiles_at_world_positions()
 
-Debug:     F1-F4 → GUIManager._unhandled_input() + ChunkDebugOverlay._unhandled_input()
-  BUG: F1-F4 each map to TWO input actions (see Issues section)
+Debug:     F1-F4 → GUIManager._unhandled_input(), F4-F10 → ChunkDebugOverlay._unhandled_input()
 
 Material:  1-9 → GUIManager._unhandled_input() → _set_material()
 Brush:     Q/E → GUIManager._unhandled_input() → _change_brush_size()
@@ -487,20 +490,20 @@ Note: `brush_preview.gd` and `debug_hud.gd` both violate encapsulation by access
 | `MAX_CHUNK_BUILDS_PER_FRAME`      | 16    | chunk_manager                                                                       |
 | `MAX_CHUNK_REMOVALS_PER_FRAME`    | 32    | chunk_manager                                                                       |
 | `MAX_BUILD_QUEUE_SIZE`            | 128   | chunk_loader (2x)                                                                   |
-| `MAX_CHUNK_POOL_SIZE`             | 512   | chunk_manager (2x)                                                                  |
+| `MAX_CHUNK_POOL_SIZE`             | 1296  | chunk_manager (2x) — calculated: `(2*LOD_RADIUS+1)² × REGION_SIZE²`                 |
 | `MAX_CONCURRENT_GENERATION_TASKS` | 8     | chunk_loader                                                                        |
 
 ### Hardcoded Values That Should Be Configurable
 
-| Location                   | Value              | Description                                 |
-| -------------------------- | ------------------ | ------------------------------------------- |
-| `chunk_manager.gd:197`     | `4`                | Distance threshold for queue re-sort        |
-| `chunk_loader.gd:71`       | `/ 2.0`            | Backpressure resume at 50%                  |
-| `gui_manager.gd:102`       | `64`               | Max brush size                              |
-| `gui_manager.gd:11`        | `2`                | Default brush size                          |
-| `chunk_manager.gd:9`       | `% 1000000`        | Seed space limited to 1M values             |
-| `world_save_manager.gd:18` | `"user://worlds/"` | Save path                                   |
-| `chunk.tscn:9`             | `Vector2(32, 32)`  | Shader texture_size (must match CHUNK_SIZE) |
+| Location                   | Value             | Description                                 |
+| -------------------------- | ----------------- | ------------------------------------------- |
+| `chunk_manager.gd:197`     | `4`               | Distance threshold for queue re-sort        |
+| `chunk_loader.gd:71`       | `/ 2.0`           | Backpressure resume at 50%                  |
+| `gui_manager.gd:102`       | `64`              | Max brush size                              |
+| `gui_manager.gd:11`        | `2`               | Default brush size                          |
+| `chunk_manager.gd:9`       | `% 1000000`       | Seed space limited to 1M values             |
+| `world_save_manager.gd:17` | `"res://data/"`   | Save path                                   |
+| `chunk.tscn:9`             | `Vector2(32, 32)` | Shader texture_size (must match CHUNK_SIZE) |
 
 ### Tile Properties (registered but unused)
 
@@ -539,11 +542,11 @@ Note: `brush_preview.gd` and `debug_hud.gd` both violate encapsulation by access
 
 ### P0 — Critical
 
-**Persistence is write-only.** `ChunkLoader` never calls `ChunkManager.load_chunk_data()` or `has_saved_chunk()`. All terrain edits are saved to disk but never loaded. Every game start regenerates fresh terrain.
+**~~Persistence is write-only.~~** [RESOLVED] `ChunkManager._queue_chunks_for_generation()` now checks `has_saved_chunk()` and loads saved data directly on the main thread, bypassing the worker thread. Data size is validated on load.
 
 ### P1 — High
 
-**Input action key collisions.** `project.godot` maps F1-F4 each to TWO different input actions (e.g., `toggle_controls_help` and `debug_toggle_all` both on F1). Both handlers fire simultaneously.
+**~~Input action key collisions.~~** [RESOLVED] F-keys are now uniquely mapped: F1=controls, F2=cursor_info, F3=debug_hud, F4=debug_overlay, F5-F10=individual debug sub-toggles.
 
 **SimplexTerrainGenerator accesses autoloads from worker thread.** `TileIndex.AIR/DIRT/GRASS/STONE` and `GlobalSettings.CHUNK_SIZE` are read from worker threads. Safe today (const values), but violates the documented constraint and couples the generator to the tile registry.
 
@@ -553,15 +556,15 @@ Note: `brush_preview.gd` and `debug_hud.gd` both violate encapsulation by access
 
 **BrushPreview accesses GUIManager private fields.** Reads `_current_brush_size`, `_current_brush_type` via `get_meta()` — breaks encapsulation.
 
-**DebugHUD accesses Player.\_movement.** Private field access from external script.
+**~~DebugHUD accesses Player.\_movement.~~** [RESOLVED] Player now exposes `get_movement_velocity()` and `get_on_floor()` public getters. DebugHUD uses duck-typed `has_method()` checks instead of private field access.
 
 ### P2 — Medium
 
-**`stop()` busy-waits on main thread.** No timeout on the `OS.delay_msec(1)` loop — hangs if a generator loops infinitely.
+**~~`stop()` busy-waits on main thread.~~** [RESOLVED] Now has a 2-second timeout. Logs a warning and breaks if tasks don't finish in time.
 
-**Pool size insufficient.** `MAX_CHUNK_POOL_SIZE=512` but max loaded chunks = `(2*LOD_RADIUS+1)^2 * REGION_SIZE^2 = 1,296`. Pool misses cause runtime instantiation, defeating its purpose.
+**~~Pool size insufficient.~~** [RESOLVED] `MAX_CHUNK_POOL_SIZE` is now calculated as `(2*LOD_RADIUS+1)^2 * REGION_SIZE^2 = 1,296`, matching max loaded chunks.
 
-**Chunk pool pre-population blocks `_ready()`.** 512 synchronous `instantiate()` calls with `local_to_scene` ShaderMaterial — significant startup hitch.
+**Chunk pool pre-population blocks `_ready()`.** 1,296 synchronous `instantiate()` calls with `local_to_scene` ShaderMaterial — significant startup hitch.
 
 **Save format version never validated on load.** `SAVE_FORMAT_VERSION` is written but never checked, so format changes silently corrupt loaded data.
 
@@ -575,6 +578,6 @@ Note: `brush_preview.gd` and `debug_hud.gd` both violate encapsulation by access
 
 **Ghost texture imports.** `assets/textures/` has `.import` files for 12 textures (flowers, gravel, coal_ore, etc.) with no corresponding source `.png` files.
 
-**`test_runner.gd` accesses `TileIndex._tiles` directly.** No `unregister_tile()` method exists for test cleanup.
+**~~`test_runner.gd` accesses `TileIndex._tiles` directly.~~** [RESOLVED] Test files have been removed from the repository.
 
 **Camera zoom init redundancy.** `_current_preset_index = 2` and `zoom = Vector2(4, 4)` set the same thing twice in `_ready()`.

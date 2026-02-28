@@ -67,7 +67,7 @@ Blueprint for converting Substrata from a standalone game into a reusable Godot 
 | `chunk_manager.gd:35`                  | `SimplexTerrainGenerator.new(world_seed)`        | Can't swap generators without forking             |
 | `camera_controller.gd:35`              | Node name `"Player"`                             | Camera breaks if player named differently         |
 | `gui_manager.gd:129`                   | `load("res://src/gui/brush_preview.gd")`         | Breaks when moved to addons/                      |
-| `world_save_manager.gd:18`             | `"user://worlds/"`                               | Users can't redirect saves                        |
+| `world_save_manager.gd:17`             | `"res://data/"`                                  | Users can't redirect saves                        |
 | `chunk_manager.gd:434`                 | Generator name `"simplex"` hardcoded in metadata | Wrong for custom generators                       |
 | `project.godot`                        | Input actions `move_left`, `jump`, etc.          | Conflicts with user's game input map              |
 | `global_settings.gd`                   | All values are `const`                           | Users can't configure without editing source      |
@@ -643,13 +643,13 @@ Requires `get_tile_id_by_name()` to be added to `TileRegistry`. Documents that `
 
 These issues from the Code Quality Review should be fixed during or before the refactor:
 
-1. **Implement chunk loading from saved data** (P0) — persistence is currently write-only
-2. **Fix `stop()` busy-wait** (CRIT-1) — add timeout, document main-thread stall
-3. **Fix path separator in `_delete_directory_contents`** (CRIT-2) — use `path_join()`
-4. **Fix camera smoothing formula** (HIGH-3) — remove `* 60.0`
-5. **Fix `world_ready` premature firing** (HIGH-1) — track initial chunk count
-6. **Fix input action key collisions** (P1) — deduplicate F1-F4 mappings
+1. ~~**Implement chunk loading from saved data** (P0)~~ — **RESOLVED**: ChunkManager now loads saved chunks directly
+2. ~~**Fix `stop()` busy-wait** (CRIT-1)~~ — **RESOLVED**: 2-second timeout added
+3. ~~**Fix path separator in `_delete_directory_contents`** (CRIT-2)~~ — **RESOLVED**: uses `path_join()`
+4. ~~**Fix camera smoothing formula** (HIGH-3)~~ — **RESOLVED**: `* 60.0` removed
+5. ~~**Fix `world_ready` premature firing** (HIGH-1)~~ — **RESOLVED**: tracks initial expected count
+6. ~~**Fix input action key collisions** (P1)~~ — **RESOLVED**: F-keys now uniquely mapped (F1-F10)
 7. **Change Player to extend Node2D or BaseEntity** (HIGH-2) — remove unused CharacterBody2D
 8. **Cache autoload values in SimplexTerrainGenerator** (MED-3) — thread safety
-9. **Validate chunk data size on load** (MED-4) — robustness
-10. **Fix deprecated `emit_signal()` call** (MED-1) — use typed `.emit()`
+9. ~~**Validate chunk data size on load** (MED-4)~~ — **RESOLVED**: size validated on load
+10. ~~**Fix deprecated `emit_signal()` call** (MED-1)~~ — **RESOLVED**: uses typed `.emit()`

@@ -18,67 +18,32 @@ Line-by-line review of every `.gd` file. Issues rated by severity with confidenc
 
 ## Critical Issues
 
-### CRIT-1: `stop()` Busy-Polls the Main Thread
+### CRIT-1: ~~`stop()` Busy-Polls the Main Thread~~ [RESOLVED]
 
-**File:** `src/world/chunks/chunk_loader.gd:228-245`
+**File:** `src/world/chunks/chunk_loader.gd`
 **Category:** Bug / Performance | **Confidence:** 95%
 
-```gdscript
-func stop() -> void:
-    _mutex.lock()
-    _shutdown_requested = true
-    ...
-    _mutex.unlock()
-    while true:
-        _mutex.lock()
-        var remaining = _active_task_count
-        _mutex.unlock()
-        if remaining == 0:
-            break
-        OS.delay_msec(1)
-```
-
-Called from `ChunkManager._exit_tree()` on the main thread. Blocks the engine's shutdown for as long as workers take to finish (potentially hundreds of ms). No timeout — hangs permanently if a custom generator has an infinite loop.
-
-Additionally, `_chunks_in_progress.clear()` at line 233 clears tracking while tasks are still between their two mutex acquisitions. Workers still decrement `_active_task_count` correctly, but the premature clear is logically incorrect.
-
-**Fix:** Add a timeout. For plugin use, call `stop()` from a separate thread or use `Thread.wait_to_finish()`. At minimum, document the main-thread stall.
+**Resolution:** `stop()` now has a 2-second timeout. If active tasks don't finish in time, it logs a warning via `push_warning()` and breaks out of the loop. `_chunks_in_progress.clear()` is now called after the wait loop completes (or times out), under a separate mutex lock.
 
 ---
 
-### CRIT-2: Missing Path Separator in `_delete_directory_contents`
+### CRIT-2: ~~Missing Path Separator in `_delete_directory_contents`~~ [RESOLVED]
 
-**File:** `src/world/persistence/world_save_manager.gd:236`
+**File:** `src/world/persistence/world_save_manager.gd`
 **Category:** Bug / Safety | **Confidence:** 95%
 
-```gdscript
-var err := DirAccess.remove_absolute(dir_path + entry)
-```
-
-String concatenation instead of `path_join()`. Currently works because callers pass trailing-slash paths, but any future caller passing `"user://worlds/myworld/chunks"` produces `"user://worlds/myworld/chunksfile.dat"` — deleting the wrong path or failing silently.
-
-**Fix:** `var full_path = dir_path.path_join(entry)`
+**Resolution:** Now uses `dir_path.path_join(entry)` for safe path construction.
 
 ---
 
 ## High Severity Issues
 
-### HIGH-1: `world_ready` Signal Can Fire Prematurely
+### HIGH-1: ~~`world_ready` Signal Can Fire Prematurely~~ [RESOLVED]
 
-**File:** `src/world/chunks/chunk_manager.gd:94-99`
+**File:** `src/world/chunks/chunk_manager.gd`
 **Category:** Bug | **Confidence:** 85%
 
-```gdscript
-if not _initial_load_complete and not _chunks.is_empty():
-    var loader_info = _chunk_loader.get_debug_info()
-    if loader_info["generation_queue_size"] == 0 and loader_info["build_queue_size"] == 0 and loader_info["in_progress_size"] == 0:
-        _initial_load_complete = true
-        SignalBus.world_ready.emit()
-```
-
-Fires after the first batch of 1-16 chunks builds if the worker pool happens to be momentarily idle that frame. Does not wait for all chunks in the generation radius to complete.
-
-**Fix:** Track the initial expected chunk count and only fire after all are built.
+**Resolution:** ChunkManager now calculates `_initial_expected_count` (total chunks in generation radius) on the first call to `_queue_chunks_for_generation()`, and only emits `world_ready` once `_chunks.size() >= _initial_expected_count`.
 
 ---
 
@@ -93,69 +58,41 @@ Fires after the first batch of 1-16 chunks builds if the worker pool happens to 
 
 ---
 
-### HIGH-3: Camera Smoothing Formula Disables Smooth Follow
+### HIGH-3: ~~Camera Smoothing Formula Disables Smooth Follow~~ [RESOLVED]
 
-**File:** `src/camera/camera_controller.gd:42`
+**File:** `src/camera/camera_controller.gd`
 **Category:** Bug | **Confidence:** 90%
 
-```gdscript
-var weight = 1.0 - exp(-smoothing * 60.0 * delta)
-```
-
-The standard formula is `1.0 - exp(-smoothing * delta)`. The extra `* 60.0` makes `weight ≈ 0.99995` at 60fps with `smoothing=10.0` — the camera snaps instantly every frame. Zero visible smoothing.
-
-**Fix:** Remove `* 60.0`, or if 60fps-normalization is intended, use `1.0 - pow(1.0 - smoothing_per_frame, 60.0 * delta)`.
+**Resolution:** Formula corrected to `1.0 - exp(-smoothing * delta)` — the `* 60.0` multiplier was removed.
 
 ---
 
-### HIGH-4: Terrain Editing Pre-Pass Is O(N) Per Tile
+### HIGH-4: ~~Terrain Editing Pre-Pass Is O(N) Per Tile~~ [RESOLVED]
 
-**File:** `src/world/chunks/chunk_manager.gd:345-381`
+**File:** `src/world/chunks/chunk_manager.gd`
 **Category:** Performance | **Confidence:** 88%
 
-```gdscript
-var old_tile_ids: Array = []
-for change in changes:
-    var tile_data = get_tile_at_world_pos(change["pos"])
-    old_tile_ids.append(tile_data[0])
-```
-
-For a large brush (radius 64 = 16,641 tiles), this performs 16,641 individual mutex acquire/release + dictionary lookups before the actual edit pass. Each `get_tile_at_world_pos()` recalculates chunk position and acquires the chunk mutex separately.
-
-**Fix:** Merge old-tile-id capture into the existing batch-by-chunk loop, acquiring mutex once per chunk.
+**Resolution:** `set_tiles_at_world_positions()` now groups changes by chunk first, then batch-reads old tile IDs using `chunk.get_tiles()` with a single mutex acquire per chunk, followed by `chunk.edit_tiles()` with a single mutex acquire per chunk. Total: 2 mutex acquires per affected chunk instead of 1 per tile.
 
 ---
 
-### HIGH-5: DebugHUD Accesses Private `_movement` Field
+### HIGH-5: ~~DebugHUD Accesses Private `_movement` Field~~ [RESOLVED]
 
-**File:** `src/gui/debug_hud.gd:37-39`
+**File:** `src/gui/debug_hud.gd`
 **Category:** Quality / Maintainability | **Confidence:** 85%
 
-```gdscript
-if _player._movement:
-    var vel = _player._movement.velocity
-```
-
-Direct access to `Player._movement` (private by convention). Breaks if Player refactors its movement system.
-
-**Fix:** Add public getters to Player: `get_velocity() -> Vector2`, `get_is_on_floor() -> bool`.
+**Resolution:** Player now exposes `get_movement_velocity() -> Vector2` and `get_on_floor() -> bool` public getters. DebugHUD uses `has_method("get_movement_velocity")` duck typing for safe access.
 
 ---
 
 ## Medium Severity Issues
 
-### MED-1: Deprecated String-Based Signal Emission
+### MED-1: ~~Deprecated String-Based Signal Emission~~ [RESOLVED]
 
-**File:** `src/entities/player.gd:60`
+**File:** `src/entities/player.gd`
 **Category:** Quality | **Confidence:** 95%
 
-```gdscript
-SignalBus.emit_signal("player_chunk_changed", _current_chunk)
-```
-
-Every other emission uses typed syntax (`SignalBus.chunk_loaded.emit(...)`). This is the only legacy string-based call. Deprecated in Godot 4.
-
-**Fix:** `SignalBus.player_chunk_changed.emit(_current_chunk)`
+**Resolution:** Now uses typed syntax: `SignalBus.player_chunk_changed.emit(_current_chunk)`.
 
 ---
 
@@ -189,29 +126,21 @@ func _init(seed: int, config: Dictionary = {}):
 
 ---
 
-### MED-4: No Validation of Loaded Chunk Data Size
+### MED-4: ~~No Validation of Loaded Chunk Data Size~~ [RESOLVED]
 
-**File:** `src/world/persistence/world_save_manager.gd:76-88`
+**File:** `src/world/persistence/world_save_manager.gd`
 **Category:** Robustness | **Confidence:** 82%
 
-```gdscript
-var data := file.get_buffer(file.get_length())
-file.close()
-return data
-```
-
-No check that loaded data matches expected size (`CHUNK_SIZE * CHUNK_SIZE * 2`). Truncated/corrupted files produce partial data that silently renders as partial air.
-
-**Fix:** Validate size, log error, return empty array on mismatch.
+**Resolution:** `load_chunk()` now validates that `data.size() == CHUNK_SIZE * CHUNK_SIZE * 2`, logs an error on mismatch, and returns an empty `PackedByteArray`.
 
 ---
 
 ### MED-5: Duplicate `world_to_chunk_pos` Logic
 
-**File:** `src/entities/player.gd:53-60`
+**File:** `src/entities/player.gd`
 **Category:** Quality / Duplication | **Confidence:** 85%
 
-Player reimplements chunk position calculation inline instead of calling `GameServices.chunk_manager.world_to_chunk_pos()`.
+Player reimplements chunk position calculation inline instead of calling `GameServices.chunk_manager.world_to_chunk_pos()`. Still present — Player uses `GlobalSettings.CHUNK_SIZE` directly for its own chunk detection to avoid depending on ChunkManager initialization timing.
 
 ---
 
@@ -237,14 +166,12 @@ All other functions in the file have return type annotations.
 
 ---
 
-### MED-8: Pool Size < Max Loaded Chunks
+### MED-8: ~~Pool Size < Max Loaded Chunks~~ [RESOLVED]
 
-**File:** `src/world/chunks/chunk_manager.gd:39-43`
+**File:** `src/globals/global_settings.gd`
 **Category:** Performance | **Confidence:** 85%
 
-Pool pre-creates 512 chunks, but max loaded = `(2*4+1)^2 * 4^2 = 1,296`. Once pool is exhausted, fallback to `_chunk_scene.instantiate()` at runtime defeats pooling.
-
-**Fix:** Calculate pool size from `LOD_RADIUS` and `REGION_SIZE`, or increase to 1,296+.
+**Resolution:** `MAX_CHUNK_POOL_SIZE` is now calculated as `(2 * LOD_RADIUS + 1) * (2 * LOD_RADIUS + 1) * REGION_SIZE * REGION_SIZE = 1,296`, matching max loaded chunks.
 
 ---
 
@@ -281,17 +208,17 @@ Sorts entire merged queue O(N log N) under the mutex on every player region chan
 
 `GlobalSettings`, `SignalBus`, `TileIndex` lack `class_name` declarations, limiting IDE autocomplete and type-hinting in other scripts.
 
-### LOW-2: Test Accesses Private `TileIndex._tiles`
+### LOW-2: ~~Test Accesses Private `TileIndex._tiles`~~ [N/A]
 
-`tests/test_runner.gd:141` — `TileIndex._tiles.erase(4)` for cleanup. No `deregister_tile()` API exists.
+Test files have been removed from the repository.
 
-### LOW-3: `_removal_queue.has(chunk)` Is O(N)
+### LOW-3: ~~`_removal_queue.has(chunk)` Is O(N)~~ [RESOLVED]
 
-`src/world/chunks/chunk_manager.gd:157` — `Array.has()` linear scan for up to 512 chunk objects. A Dictionary set would give O(1).
+ChunkManager now uses `_removal_queue_set: Dictionary` for O(1) duplicate checking alongside the Array queue.
 
-### LOW-4: No Guard Against Empty `zoom_presets`
+### LOW-4: ~~No Guard Against Empty `zoom_presets`~~ [RESOLVED]
 
-`src/camera/camera_controller.gd:62` — `zoom_presets[_current_preset_index]` crashes if the array is set to empty via Inspector.
+`_cycle_zoom_preset()` now returns early if `zoom_presets.is_empty()`.
 
 ### LOW-5: Debug Overlay Mutex + Allocation Every Frame
 
@@ -307,7 +234,7 @@ Sorts entire merged queue O(N log N) under the mutex on every player region chan
 | ----------------------------------------- | --------------------------------------------------------------- |
 | Mutex hold time in `_generate_chunk_task` | Good — only held during queue operations, not during generation |
 | Backpressure system                       | Good — pauses generation when build queue > 128                 |
-| `stop()` main-thread block                | Bad — busy-wait with no timeout                                 |
+| `stop()` main-thread block                | Fixed — busy-wait now has 2-second timeout                      |
 | Queue sort under mutex                    | Medium — O(N log N) under lock on region change                 |
 | `get_debug_info()` copies                 | Minor — full queue duplication every visible frame              |
 
@@ -315,19 +242,19 @@ Sorts entire merged queue O(N log N) under the mutex on every player region chan
 
 | Concern                         | Assessment                                                                        |
 | ------------------------------- | --------------------------------------------------------------------------------- |
-| Chunk pooling                   | Functional but undersized (512 vs 1,296 needed)                                   |
-| Pool pre-creation               | Blocks `_ready()` — 512 synchronous instantiations                                |
+| Chunk pooling                   | Fixed — pool size now calculated to match max loaded chunks (1,296)               |
+| Pool pre-creation               | Blocks `_ready()` — 1,296 synchronous instantiations                              |
 | `_entities.values()` per frame  | Allocates new Array each `_physics_process`                                       |
 | PackedByteArray COW             | Correct — comment says "reference" but GDScript COW means effective copy on write |
 | ShaderMaterial `local_to_scene` | Correct — each chunk gets its own material (required for per-chunk data texture)  |
 
 ### Frame Budget
 
-| Limit                          | Value     | Assessment                                                   |
-| ------------------------------ | --------- | ------------------------------------------------------------ |
-| `MAX_CHUNK_BUILDS_PER_FRAME`   | 16        | Reasonable — each build does one GPU texture upload          |
-| `MAX_CHUNK_REMOVALS_PER_FRAME` | 32        | Reasonable — removals are cheaper than builds                |
-| Terrain editing per frame      | Unbounded | Bad — large brush = 16K+ tile changes per frame, no throttle |
+| Limit                          | Value     | Assessment                                                                |
+| ------------------------------ | --------- | ------------------------------------------------------------------------- |
+| `MAX_CHUNK_BUILDS_PER_FRAME`   | 16        | Reasonable — each build does one GPU texture upload                       |
+| `MAX_CHUNK_REMOVALS_PER_FRAME` | 32        | Reasonable — removals are cheaper than builds                             |
+| Terrain editing per frame      | Unbounded | Partially improved — batched per-chunk mutex, but still no frame throttle |
 
 ### Rendering Pipeline
 
@@ -342,7 +269,9 @@ Sorts entire merged queue O(N log N) under the mutex on every player region chan
 
 ## Test Coverage Assessment
 
-### Covered Systems
+**Note:** The test files (`tests/test_runner.gd`, etc.) have been removed from the repository. The coverage information below reflects what was tested before removal.
+
+### Previously Covered Systems
 
 | System                  | Test File        | Coverage                                |
 | ----------------------- | ---------------- | --------------------------------------- |
@@ -373,27 +302,27 @@ For a plugin release, integration tests for `CollisionDetector.sweep_aabb()`, `M
 
 ## Summary Table
 
-| ID     | File                                  | Line      | Severity | Category   | Description                           |
-| ------ | ------------------------------------- | --------- | -------- | ---------- | ------------------------------------- |
-| CRIT-1 | `chunk_loader.gd`                     | 228-245   | Critical | Bug/Perf   | `stop()` busy-polls main thread       |
-| CRIT-2 | `world_save_manager.gd`               | 236       | Critical | Bug/Safety | Missing path separator                |
-| HIGH-1 | `chunk_manager.gd`                    | 94-99     | High     | Bug        | `world_ready` fires prematurely       |
-| HIGH-2 | `player.gd`                           | 1         | High     | Quality    | Unused CharacterBody2D inheritance    |
-| HIGH-3 | `camera_controller.gd`                | 42        | High     | Bug        | Smoothing \*60 disables smooth follow |
-| HIGH-4 | `chunk_manager.gd`                    | 345-381   | High     | Perf       | O(N) per-tile pre-pass in editing     |
-| HIGH-5 | `debug_hud.gd`                        | 37-39     | High     | Quality    | Private field access across scripts   |
-| MED-1  | `player.gd`                           | 60        | Medium   | Quality    | Deprecated `emit_signal()`            |
-| MED-2  | `gui_manager.gd`                      | 56-61     | Medium   | Perf       | No edit throttle, 1M signals/sec      |
-| MED-3  | `simplex_terrain_generator.gd`        | 81+       | Medium   | Safety     | Autoload access from worker thread    |
-| MED-4  | `world_save_manager.gd`               | 86        | Medium   | Robustness | No chunk data size validation         |
-| MED-5  | `player.gd`                           | 53-60     | Medium   | Quality    | Duplicates world_to_chunk_pos         |
-| MED-6  | `editing_toolbar.gd`/`gui_manager.gd` | 7-8/17-18 | Medium   | Quality    | Duplicate BRUSH\_\* constants         |
-| MED-7  | `chunk.gd`                            | 59        | Medium   | Quality    | Missing return type hint              |
-| MED-8  | `chunk_manager.gd`                    | 39-43     | Medium   | Perf       | Pool size 512 < max 1,296             |
-| MED-9  | `gui_manager.gd`                      | 126-131   | Medium   | Safety     | Fragile meta-based dependency         |
-| MED-10 | `chunk_loader.gd`                     | 44-54     | Medium   | Perf       | Full queue re-sort under mutex        |
-| LOW-1  | `global_settings.gd`                  | —         | Low      | Quality    | No class_name on autoloads            |
-| LOW-2  | `test_runner.gd`                      | 141       | Low      | Quality    | Private field access in tests         |
-| LOW-3  | `chunk_manager.gd`                    | 157       | Low      | Perf       | O(N) removal queue lookup             |
-| LOW-4  | `camera_controller.gd`                | 62        | Low      | Robustness | No empty zoom_presets guard           |
-| LOW-5  | `chunk_debug_overlay.gd`              | 29        | Low      | Perf       | Debug mutex + alloc every frame       |
+| ID     | File                                  | Severity | Category   | Description                           | Status        |
+| ------ | ------------------------------------- | -------- | ---------- | ------------------------------------- | ------------- |
+| CRIT-1 | `chunk_loader.gd`                     | Critical | Bug/Perf   | `stop()` busy-polls main thread       | **RESOLVED**  |
+| CRIT-2 | `world_save_manager.gd`               | Critical | Bug/Safety | Missing path separator                | **RESOLVED**  |
+| HIGH-1 | `chunk_manager.gd`                    | High     | Bug        | `world_ready` fires prematurely       | **RESOLVED**  |
+| HIGH-2 | `player.gd`                           | High     | Quality    | Unused CharacterBody2D inheritance    | Open          |
+| HIGH-3 | `camera_controller.gd`                | High     | Bug        | Smoothing \*60 disables smooth follow | **RESOLVED**  |
+| HIGH-4 | `chunk_manager.gd`                    | High     | Perf       | O(N) per-tile pre-pass in editing     | **RESOLVED**  |
+| HIGH-5 | `debug_hud.gd`                        | High     | Quality    | Private field access across scripts   | **RESOLVED**  |
+| MED-1  | `player.gd`                           | Medium   | Quality    | Deprecated `emit_signal()`            | **RESOLVED**  |
+| MED-2  | `gui_manager.gd`                      | Medium   | Perf       | No edit throttle, 1M signals/sec      | Open          |
+| MED-3  | `simplex_terrain_generator.gd`        | Medium   | Safety     | Autoload access from worker thread    | Open          |
+| MED-4  | `world_save_manager.gd`               | Medium   | Robustness | No chunk data size validation         | **RESOLVED**  |
+| MED-5  | `player.gd`                           | Medium   | Quality    | Duplicates world_to_chunk_pos         | Open          |
+| MED-6  | `editing_toolbar.gd`/`gui_manager.gd` | Medium   | Quality    | Duplicate BRUSH\_\* constants         | Open          |
+| MED-7  | `chunk.gd`                            | Medium   | Quality    | Missing return type hint              | Open          |
+| MED-8  | `chunk_manager.gd`                    | Medium   | Perf       | Pool size 512 < max 1,296             | **RESOLVED**  |
+| MED-9  | `gui_manager.gd`                      | Medium   | Safety     | Fragile meta-based dependency         | Open          |
+| MED-10 | `chunk_loader.gd`                     | Medium   | Perf       | Full queue re-sort under mutex        | Open          |
+| LOW-1  | `global_settings.gd`                  | Low      | Quality    | No class_name on autoloads            | Open          |
+| LOW-2  | `test_runner.gd`                      | Low      | Quality    | Private field access in tests         | N/A (removed) |
+| LOW-3  | `chunk_manager.gd`                    | Low      | Perf       | O(N) removal queue lookup             | **RESOLVED**  |
+| LOW-4  | `camera_controller.gd`                | Low      | Robustness | No empty zoom_presets guard           | **RESOLVED**  |
+| LOW-5  | `chunk_debug_overlay.gd`              | Low      | Perf       | Debug mutex + alloc every frame       | Open          |

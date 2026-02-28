@@ -57,7 +57,7 @@ GameInstance (Node)
 │   └── [Chunk instances...]
 ├── EntityManager (Node)
 │   └── [BaseEntity instances...]
-├── ChunkDebugOverlay (Node2D)
+├── ChunkDebugOverlay (Node2D)    — debug visualization (F4-F10 sub-toggles)
 └── UILayer (CanvasLayer)
     └── GUIManager (Control)
 ```
@@ -120,6 +120,7 @@ ChunkManager._process()   ←→   ChunkLoader._generate_chunk_task()
 
 - **Mutex**: Protects ChunkLoader queues and Chunk terrain data
 - **Backpressure**: Generation pauses when build queue exceeds `MAX_BUILD_QUEUE_SIZE` (128). Resumes when drained below 50%.
+- **Shutdown**: `stop()` sets `_shutdown_requested`, clears queues, then busy-waits with a 2-second timeout for active tasks to finish.
 - **Frame budget**: Max 16 builds and 32 removals per frame (configurable in GlobalSettings)
 
 ### Thread Safety Rules
@@ -246,17 +247,17 @@ Mouse input → GUIManager._apply_edit()
 
 ### GlobalSettings Constants
 
-| Constant                        | Default | Purpose                            |
-| ------------------------------- | ------- | ---------------------------------- |
-| CHUNK_SIZE                      | 32      | Tiles per chunk side               |
-| REGION_SIZE                     | 4       | Chunks per region side             |
-| LOD_RADIUS                      | 4       | Regions to generate around player  |
-| REMOVAL_BUFFER                  | 2       | Extra regions before chunk removal |
-| MAX_CHUNK_BUILDS_PER_FRAME      | 16      | Build budget per frame             |
-| MAX_CHUNK_REMOVALS_PER_FRAME    | 32      | Removal budget per frame           |
-| MAX_BUILD_QUEUE_SIZE            | 128     | Backpressure threshold             |
-| MAX_CHUNK_POOL_SIZE             | 512     | Chunk pool cap                     |
-| MAX_CONCURRENT_GENERATION_TASKS | 8       | WorkerThreadPool parallelism       |
+| Constant                        | Default | Purpose                                                         |
+| ------------------------------- | ------- | --------------------------------------------------------------- |
+| CHUNK_SIZE                      | 32      | Tiles per chunk side                                            |
+| REGION_SIZE                     | 4       | Chunks per region side                                          |
+| LOD_RADIUS                      | 4       | Regions to generate around player                               |
+| REMOVAL_BUFFER                  | 2       | Extra regions before chunk removal                              |
+| MAX_CHUNK_BUILDS_PER_FRAME      | 16      | Build budget per frame                                          |
+| MAX_CHUNK_REMOVALS_PER_FRAME    | 32      | Removal budget per frame                                        |
+| MAX_BUILD_QUEUE_SIZE            | 128     | Backpressure threshold                                          |
+| MAX_CHUNK_POOL_SIZE             | 1296    | Chunk pool cap (calculated: `(2*LOD_RADIUS+1)² × REGION_SIZE²`) |
+| MAX_CONCURRENT_GENERATION_TASKS | 8       | WorkerThreadPool parallelism                                    |
 
 ## Camera System
 
@@ -264,7 +265,7 @@ Mouse input → GUIManager._apply_edit()
 
 ### Features
 
-- **Smooth follow**: Frame-rate independent lerp: `weight = 1.0 - exp(-smoothing * 60.0 * delta)`. Configurable `smoothing` export (default 10.0).
+- **Smooth follow**: Frame-rate independent lerp: `weight = 1.0 - exp(-smoothing * delta)`. Configurable `smoothing` export (default 10.0).
 - **Mouse wheel zoom**: Multiplies current zoom by `(1 ± zoom_step)`, clamped to `[min_zoom, max_zoom]`.
 - **Zoom presets**: Z key cycles through `[1x, 2x, 4x, 8x]`. Default starts at 4x.
 - **Target discovery**: Deferred `_find_target()` locates `Player` node via `get_tree().current_scene.get_node_or_null("Player")`.
@@ -298,15 +299,21 @@ Entity signals are typed as `Node2D` (not `BaseEntity`) on SignalBus to avoid co
 
 ## Input Actions
 
-| Action                     | Key         | System              |
-| -------------------------- | ----------- | ------------------- |
-| move_left/right            | A/D         | Player movement     |
-| jump                       | Space       | Player jump         |
-| zoom presets               | Z           | Cycle camera zoom   |
-| mouse wheel                | Scroll      | Camera zoom in/out  |
-| 1/2/3/4                    | Number keys | Material selection  |
-| Q/E                        | Size keys   | Brush size          |
-| toggle_controls_help       | F1          | Controls overlay    |
-| toggle_cursor_info         | F2          | Cursor info HUD     |
-| toggle_debug_hud           | F3          | Debug HUD           |
-| toggle_debug_world_overlay | F4          | Chunk debug overlay |
+| Action                        | Key         | System                   |
+| ----------------------------- | ----------- | ------------------------ |
+| move_left/right               | A/D         | Player movement          |
+| jump                          | Space       | Player jump              |
+| zoom presets                  | Z           | Cycle camera zoom        |
+| mouse wheel                   | Scroll      | Camera zoom in/out       |
+| 1/2/3/4                       | Number keys | Material selection       |
+| Q/E                           | Size keys   | Brush size               |
+| toggle_controls_help          | F1          | Controls overlay         |
+| toggle_cursor_info            | F2          | Cursor info HUD          |
+| toggle_debug_hud              | F3          | Debug HUD                |
+| toggle_debug_world_overlay    | F4          | Chunk debug overlay      |
+| debug_toggle_all              | F5          | Toggle all debug layers  |
+| debug_toggle_chunk_borders    | F6          | Chunk border overlay     |
+| debug_toggle_region_borders   | F7          | Region border overlay    |
+| debug_toggle_generation_queue | F8          | Generation queue overlay |
+| debug_toggle_removal_queue    | F9          | Removal queue overlay    |
+| debug_toggle_queue_info       | F10         | Queue info text overlay  |
