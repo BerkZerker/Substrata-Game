@@ -42,51 +42,73 @@ cell_id and samples the texture array; rendering is free. When force partially o
 `0 < force < hardness` — the tile steps up one damage stage and the flood fill stops there. On subsequent edits, a damaged
 tile's effective hardness is reduced, so it breaks before its intact neighbors.
 
-**3. Force propagation algorithm — Dijkstra BFS (max remaining force, not sum)**
+**3. Force propagation algorithm — max-path Dijkstra (chosen)**
 
-The flood fill operates as a max-force Dijkstra from the edit origin:
-- Each tile tracks the maximum remaining force that has reached it: `max(current, incoming - entry_cost)`
-- A tile breaks when `max_force_reached > 0` (it absorbed the hit, remaining = max_force_reached)
-- Propagation continues from broken tiles with remaining force; intact tiles absorb force but don't propagate
-- Priority queue ordered by remaining force ensures high-force paths are resolved before low-force ones
+There are two reasonable models; here's a concrete example to make the difference clear.
 
-The "hollowed bricks get focused force" behavior emerges naturally: once surrounding mortar breaks, bricks can be reached
-via multiple paths without paying mortar entry costs again. Every subsequent edit hits them with fuller force. Within a
-single edit, they receive the max force from the best path — no artificial boost needed.
+*Setup*: force=10, mortar hardness=3, brick hardness=5. One brick surrounded by mortar on all 4 sides.
 
-**4. Two-phase editing: destruction → structural instability**
+**Max-path (Dijkstra) — chosen:**
+Force from the origin propagates outward, and each tile records the single best (highest) remaining force
+that could reach it from any one direction.
+- Origin → mortar: 10 − 3 = 7 remaining. Mortar breaks. Force = 7.
+- Mortar → brick (from one side): 7 − 5 = 2 remaining. Brick breaks. Force = 2 continues outward.
+- The other 3 mortar neighbors also arrive at the brick with 7, but since it already broke via the first
+  path, they don't re-break it. The 2 remaining propagates outward.
 
-Phase 1 (Flood fill): Collect all tiles to destroy and all damage state updates, then batch-apply them through the
-existing `ChunkManager.set_tiles_at_world_positions()` plumbing. No new cross-chunk machinery needed.
+The rule is simple: **force drains by hardness cost along each path; a tile breaks if the best path's
+remaining force > 0 after paying that tile's cost.** Long paths through expensive material exhaust force
+before reaching distant tiles. This is easy to predict and reason about as a player.
 
-Phase 2 (Structural instability): After phase 1, run a secondary connectivity flood fill from all tiles that border
-permanent world edges or are "ground-anchored". Any solid region not reachable from an anchor is disconnected. Spawn
-these as falling `BaseEntity` instances via EntityManager. This phase is optional and can be implemented separately —
-phase 1 alone already produces the core destruction behavior.
+**Sum-of-paths (not chosen):**
+Every separate path that arrives at a tile *adds* its remaining force together.
+- All 4 mortar neighbors arrive at the brick simultaneously, each contributing 7.
+- Total force on brick = 4 × 7 = 28. Brick easily breaks.
+- A tile exposed from many sides takes much more effective damage than one reached from only one direction.
 
-**5. Thread safety — flood fill stays on main thread**
+This makes exposed/isolated tiles dramatically easier to break in a single edit — but it's harder to
+predict ("why did this brick break but that one didn't?"), and combining multiple force values raises
+questions without clear answers (sum? average? diminishing returns?).
 
-Flood fill reads terrain data to decide what to break, then writes through the existing locked batch-edit path. Reading
-terrain per-tile for pathfinding means temporarily holding chunk mutexes during the read phase, which is fine since the
-main thread already does this. Cap flood fill radius (e.g., 64 tiles) to bound worst-case cost.
+**Why max-path wins here:** The "hollowed bricks get focused force" behavior works across edits, not
+within one. Edit 1 breaks the mortar. Edit 2 arrives at the now-exposed brick with full force from any
+direction since the mortar is already gone. The focusing is real and satisfying — it just plays out over
+two clicks rather than one. Within a single edit, max-path is simpler, cheaper, and more legible.
 
-### Open questions to decide before implementing
+Implementation: Dijkstra priority queue ordered by remaining force (highest first). Each tile visited
+at most once. Priority queue entry: `(remaining_force, tile_pos)`.
 
-1. **Tool parameterization** — Does the player dial in force directly (slider), or does tool type determine it (pickaxe =
-   directional + force 8, explosive = radial + force 30)? Tool types also let you bake in initial directionality: a pickaxe
-   starts the fill with bias toward the cursor direction, while an explosive starts truly omnidirectional.
+**4. Force input — debug slider for now, tool-driven later**
 
-2. **Force splitting vs. max-path** — The Dijkstra max-path model is recommended above, but if you want the "focus" effect
-   to be stronger within a single edit (not just across edits), a sum-of-paths model gives that at the cost of more complex
-   bookkeeping. Worth prototyping both.
+A slider in the debug UI controls force (e.g., 1–50). In the future, different tools (pickaxe,
+explosive, drill) will each have a fixed force value and potentially directional bias baked in. For now,
+omnidirectional from click origin at whatever force the slider is set to.
 
-3. **Scope of phase 2 (debris)** — Structural instability with spawned entities is a significant system on its own. Confirm
-   whether it belongs in the same milestone as the flood fill or is deferred.
+**5. Structural instability — destroy small orphaned clusters, no physics**
+
+No falling debris. Instead, after phase 1 (flood fill) completes, run a small cluster cleanup pass:
+
+1. Collect all solid tiles adjacent to any newly-destroyed tile (the "border set").
+2. For each border tile not yet processed, BFS outward through connected solid tiles. Stop early once
+   the component size exceeds the threshold (e.g., 5 tiles).
+3. If BFS completes within the threshold: the component is a small orphaned cluster → destroy it.
+4. Batch the cluster destructions into the same `set_tiles_at_world_positions()` call (or a second
+   immediate call) so the edit stays atomic from the chunk system's perspective.
+
+This prevents single floating tiles and small orphaned fragments without physics. The early-exit BFS
+keeps cost bounded — you never traverse more than `threshold` tiles per border tile. One pass is enough;
+cascading re-checks are not needed for reasonable gameplay.
+
+**6. Thread safety — flood fill stays on main thread**
+
+Flood fill reads terrain data to decide what to break, then writes through the existing locked batch-edit
+path. Cap flood fill radius (e.g., 64 tiles max from origin) to bound worst-case cost per click.
 
 ### Suggested implementation order
 
-1. Wire force to the existing hardness values — make edits respect hardness (no flood fill yet, just "can I break this?")
-2. Add damage stages via cell_id — tile takes partial hits before breaking
-3. Implement basic omnidirectional Dijkstra flood fill from edit origin
-4. Add directional edge hardness to TileIndex — unlock mortar/brick behavior
-5. Add structural instability phase (optional, separate milestone)
+1. Wire force to existing hardness values — make edits respect hardness (no flood fill yet, just "can I break this?")
+2. Add debug UI slider for force value
+3. Add damage stages via cell_id — tile takes partial hits before breaking, effective hardness scales down
+4. Implement omnidirectional Dijkstra flood fill from click origin
+5. Add small orphaned cluster cleanup pass after flood fill
+6. Add directional edge hardness to TileIndex — unlock mortar/brick behavior (separate milestone)
