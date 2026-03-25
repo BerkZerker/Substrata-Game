@@ -7,11 +7,16 @@ var _cursor_info: CursorInfo
 var _controls_overlay: ControlsOverlay
 var _brush_preview: BrushPreview
 
+# Terrain editing
+var _terrain_editor: TerrainEditor = TerrainEditor.new()
+
 # State
 var _current_brush_type: int = 0
 var _current_brush_size: int = 2
 var _current_material: int = TileIndex.STONE
+var _current_force: float = float(GlobalSettings.DEFAULT_EDIT_FORCE)
 var _is_editing: bool = false
+var _is_destroying: bool = false
 var _last_edit_tile_pos: Vector2 = Vector2(INF, INF)
 
 # Constants
@@ -40,6 +45,7 @@ func _setup_components() -> void:
 	_toolbar.brush_type_changed.connect(_on_brush_type_changed)
 	_toolbar.material_changed.connect(_on_material_changed)
 	_toolbar.brush_size_changed.connect(_on_brush_size_changed)
+	_toolbar.force_changed.connect(_on_force_changed)
 
 	# Debug HUD (starts hidden, F3 toggles)
 	_debug_hud = DebugHUD.new()
@@ -57,13 +63,20 @@ func _setup_components() -> void:
 func _process(_delta: float) -> void:
 	_update_brush_preview()
 
-	if _is_editing:
+	if _is_destroying:
+		_apply_destroy()
+	elif _is_editing:
 		_apply_edit()
 
 
 func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
+			_is_destroying = event.pressed
+			if _is_destroying:
+				_last_edit_tile_pos = Vector2(INF, INF)
+				get_viewport().set_input_as_handled()
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			_is_editing = event.pressed
 			if _is_editing:
 				_last_edit_tile_pos = Vector2(INF, INF)
@@ -79,6 +92,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_change_brush_size(-1)
 	elif event.keycode == KEY_E:
 		_change_brush_size(1)
+	elif event.keycode == KEY_T:
+		# Toggle debug terrain visualization
+		if GameServices.chunk_manager:
+			Chunk.debug_terrain = not Chunk.debug_terrain
+			GameServices.chunk_manager.set_debug_terrain(Chunk.debug_terrain)
 
 	# Material selection: number keys 1-9 map to tile IDs in registry order
 	var number_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
@@ -125,6 +143,10 @@ func _on_brush_size_changed(new_size: int) -> void:
 		_brush_preview.queue_redraw()
 
 
+func _on_force_changed(new_force: float) -> void:
+	_current_force = clampf(new_force, 1.0, float(GlobalSettings.MAX_EDIT_FORCE))
+
+
 func _setup_brush_preview() -> void:
 	_brush_preview = BrushPreview.new()
 	_brush_preview.z_index = 100
@@ -141,6 +163,21 @@ func _update_brush_preview() -> void:
 	_brush_preview.queue_redraw()
 
 
+## Left-click: force-based terrain destruction via Dijkstra flood fill.
+func _apply_destroy() -> void:
+	var mouse_pos = get_viewport().get_camera_2d().get_global_mouse_position()
+	var center_tile = mouse_pos.floor()
+
+	# Skip if mouse hasn't moved to a new tile position
+	if center_tile == _last_edit_tile_pos:
+		return
+	_last_edit_tile_pos = center_tile
+
+	if GameServices.chunk_manager:
+		_terrain_editor.edit_at(center_tile, _current_force, GameServices.chunk_manager)
+
+
+## Right-click: place tiles using brush shape/size.
 func _apply_edit() -> void:
 	var mouse_pos = get_viewport().get_camera_2d().get_global_mouse_position()
 	var center_tile = mouse_pos.floor()
@@ -164,7 +201,7 @@ func _apply_edit() -> void:
 			changes.append({
 				"pos": center_tile + offset,
 				"tile_id": _current_material,
-				"cell_id": 0
+				"damage_stage": 0
 			})
 
 	if not changes.is_empty() and GameServices.chunk_manager:
@@ -184,6 +221,11 @@ func get_brush_size() -> int:
 ## Returns the current material tile ID.
 func get_current_material() -> int:
 	return _current_material
+
+
+## Returns the current edit force.
+func get_current_force() -> float:
+	return _current_force
 
 
 func _exit_tree() -> void:

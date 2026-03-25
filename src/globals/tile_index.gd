@@ -22,6 +22,7 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"damage": 0.0,
 	"transparency": 1.0,
 	"hardness": 1,
+	"damage_stages": 2, # Number of damage stages before destruction (0 = intact, stages 1..N, then destroyed = AIR)
 }
 
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
@@ -36,10 +37,10 @@ var _texture_size: int = 0
 
 func _ready() -> void:
 	# Register the default tile set
-	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0})
-	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2))
-	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2))
-	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 3})
+	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0, "damage_stages": 0})
+	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2), {"hardness": 3})
+	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2), {"hardness": 2})
+	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 8, "damage_stages": 2})
 	rebuild_texture_array()
 
 
@@ -178,6 +179,22 @@ func get_transparency(tile_id: int) -> float:
 ## Returns the hardness value for a tile (default 1).
 func get_hardness(tile_id: int) -> int:
 	return get_tile_property(tile_id, "hardness")
+
+
+## Returns the number of damage stages for a tile (default 2).
+func get_damage_stages(tile_id: int) -> int:
+	return get_tile_property(tile_id, "damage_stages")
+
+
+## Returns the effective hardness of a tile at a given damage stage.
+## Damaged tiles are easier to break: hardness scales linearly from full to 0.
+func get_effective_hardness(tile_id: int, damage_stage: int) -> float:
+	var base_hardness: float = float(get_hardness(tile_id))
+	var max_stages: int = get_damage_stages(tile_id)
+	if max_stages <= 0:
+		return base_hardness
+	var scale: float = 1.0 - (float(damage_stage) / float(max_stages))
+	return base_hardness * scale
 
 
 # Creates a transparent placeholder image for tiles without textures.

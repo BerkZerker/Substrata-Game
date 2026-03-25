@@ -1,6 +1,6 @@
 ## Individual terrain chunk with mutex-protected data and shader-based rendering.
 ##
-## Stores terrain as a PackedByteArray (2 bytes per tile: [tile_id, cell_id]).
+## Stores terrain as a PackedByteArray (2 bytes per tile: [tile_id, damage_stage]).
 ## Uses a shared QuadMesh and fragment shader for rendering. Supports pooling
 ## via reset().
 class_name Chunk extends Node2D
@@ -9,6 +9,7 @@ class_name Chunk extends Node2D
 @onready var _visual_mesh: MeshInstance2D = $MeshInstance2D
 
 static var _shared_quad_mesh: QuadMesh
+static var debug_terrain: bool = false
 
 var _terrain_data: PackedByteArray = PackedByteArray()
 var _terrain_image: Image
@@ -62,13 +63,14 @@ func _setup_visual_mesh(image: Image):
 
 	_data_texture = ImageTexture.create_from_image(image)
 	_visual_mesh.material.set_shader_parameter("chunk_data_texture", _data_texture)
+	_visual_mesh.material.set_shader_parameter("debug_terrain", debug_terrain)
 	var tile_textures = TileIndex.get_texture_array()
 	if tile_textures:
 		_visual_mesh.material.set_shader_parameter("tile_textures", tile_textures)
 
 
 ## Applies a batch of tile changes to terrain data and visuals.
-## changes: Array of { "x": int, "y": int, "tile_id": int, "cell_id": int }
+## changes: Array of { "x": int, "y": int, "tile_id": int, "damage_stage": int }
 func edit_tiles(changes: Array) -> void:
 	if changes.is_empty():
 		return
@@ -92,17 +94,17 @@ func edit_tiles(changes: Array) -> void:
 			continue
 			
 		var tile_id = change["tile_id"]
-		var cell_id = change["cell_id"]
-		
+		var damage_stage = change["damage_stage"]
+
 		# Update Data
 		_terrain_data[index] = tile_id
-		_terrain_data[index + 1] = cell_id
-		
+		_terrain_data[index + 1] = damage_stage
+
 		# Update Visual Image
 		if _terrain_image:
 			# Calculate image Y (inverted relative to data Y in current rendering logic)
 			var image_y = (chunk_size - 1) - y
-			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, cell_id * inv_255, 0, 0))
+			_terrain_image.set_pixel(x, image_y, Color(tile_id * inv_255, damage_stage * inv_255, 0, 0))
 		
 		changed_something = true
 	
@@ -145,7 +147,7 @@ func get_tiles(positions: Array[Vector2i]) -> Array:
 	return results
 
 
-## Returns [tile_id, cell_id] at a specific tile position within the chunk.
+## Returns [tile_id, damage_stage] at a specific tile position within the chunk.
 func get_tile_at(tile_x: int, tile_y: int) -> Array:
 	if tile_y < 0 or tile_y >= GlobalSettings.CHUNK_SIZE:
 		return [0, 0] # Return air if out of bounds

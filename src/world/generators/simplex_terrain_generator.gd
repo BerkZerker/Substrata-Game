@@ -90,7 +90,7 @@ func get_generator_name() -> String:
 
 
 ## Generates terrain data for a chunk at the given chunk position.
-## Returns a PackedByteArray with 2 bytes per tile: [tile_id, cell_id].
+## Returns a PackedByteArray with 2 bytes per tile: [tile_id, damage_stage].
 func generate_chunk(chunk_pos: Vector2i) -> PackedByteArray:
 	var chunk_size = _chunk_size
 	var data = PackedByteArray()
@@ -112,7 +112,7 @@ func generate_chunk(chunk_pos: Vector2i) -> PackedByteArray:
 
 			var index = (y * chunk_size + x) * 2
 			data[index] = tile_id
-			data[index + 1] = 0 # cell_id (unused for now)
+			data[index + 1] = 0 # damage_stage (0 = intact)
 
 	return data
 

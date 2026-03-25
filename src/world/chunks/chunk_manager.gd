@@ -313,7 +313,7 @@ func is_solid_at_world_pos(world_pos: Vector2) -> bool:
 	return TileIndex.is_solid(chunk.get_tile_id_at(tile_pos.x, tile_pos.y))
 
 
-## Returns [tile_id, cell_id] at the given world position.
+## Returns [tile_id, damage_stage] at the given world position.
 func get_tile_at_world_pos(world_pos: Vector2) -> Array:
 	var chunk_pos = world_to_chunk_pos(world_pos)
 	var chunk = get_chunk_at(chunk_pos)
@@ -324,7 +324,7 @@ func get_tile_at_world_pos(world_pos: Vector2) -> Array:
 
 
 ## Returns tile data for multiple world positions, batched by chunk.
-## Result dictionary: { Vector2(world_pos): [tile_id, cell_id] }
+## Result dictionary: { Vector2(world_pos): [tile_id, damage_stage] }
 func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 	var result = {}
 	var batched_requests = {} # { chunk_pos: [ { "world_pos": Vector2, "tile_pos": Vector2i } ] }
@@ -363,9 +363,9 @@ func get_tiles_at_world_positions(world_positions: Array) -> Dictionary:
 
 
 ## Applies tile changes at multiple world positions, batched by chunk.
-## changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "cell_id": int }
+## changes: Array of Dictionary { "pos": Vector2, "tile_id": int, "damage_stage": int }
 func set_tiles_at_world_positions(changes: Array) -> void:
-	var batched_changes = {} # { chunk_pos: [ { "x", "y", "tile_id", "cell_id", "idx" } ] }
+	var batched_changes = {} # { chunk_pos: [ { "x", "y", "tile_id", "damage_stage", "idx" } ] }
 
 	# Group changes by chunk (single pass)
 	for i in range(changes.size()):
@@ -382,7 +382,7 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 			"x": tile_pos.x,
 			"y": tile_pos.y,
 			"tile_id": change["tile_id"],
-			"cell_id": change["cell_id"],
+			"damage_stage": change["damage_stage"],
 			"idx": i
 		})
 
@@ -414,6 +414,14 @@ func set_tiles_at_world_positions(changes: Array) -> void:
 	for i in range(changes.size()):
 		var change = changes[i]
 		SignalBus.tile_changed.emit(change["pos"], old_tile_ids[i], change["tile_id"])
+
+
+## Toggles debug terrain visualization on all loaded chunks.
+func set_debug_terrain(enabled: bool) -> void:
+	Chunk.debug_terrain = enabled
+	for chunk in _chunks.values():
+		if is_instance_valid(chunk) and chunk._visual_mesh and chunk._visual_mesh.material:
+			chunk._visual_mesh.material.set_shader_parameter("debug_terrain", enabled)
 
 
 ## Returns a snapshot of debug info for the overlay.

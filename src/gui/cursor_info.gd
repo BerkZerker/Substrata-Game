@@ -42,6 +42,16 @@ func _process(delta: float) -> void:
 	var world_pos = camera.get_global_mouse_position()
 	var tile_pos = world_pos.floor()
 	var tile_data = GameServices.chunk_manager.get_tile_at_world_pos(world_pos)
-	var tile_name = TileIndex.get_tile_name(tile_data[0])
+	var tile_id: int = tile_data[0]
+	var damage_stage: int = tile_data[1]
+	var tile_name = TileIndex.get_tile_name(tile_id)
+	var hardness = TileIndex.get_hardness(tile_id)
+	var eff_hardness = TileIndex.get_effective_hardness(tile_id, damage_stage)
 
-	_label.text = "(%d, %d) %s" % [int(tile_pos.x), int(tile_pos.y), tile_name]
+	if tile_id == TileIndex.AIR:
+		_label.text = "(%d, %d) %s" % [int(tile_pos.x), int(tile_pos.y), tile_name]
+	else:
+		_label.text = "(%d, %d) %s  H:%d  Eff:%.1f  Dmg:%d/%d" % [
+			int(tile_pos.x), int(tile_pos.y), tile_name,
+			hardness, eff_hardness, damage_stage, TileIndex.get_damage_stages(tile_id)
+		]

@@ -3,9 +3,12 @@ class_name EditingToolbar extends PanelContainer
 signal brush_type_changed(brush_type: int)
 signal material_changed(tile_id: int)
 signal brush_size_changed(new_size: int)
+signal force_changed(new_force: float)
 
 var _material_buttons: Dictionary = {}
 var _brush_size_label: Label
+var _force_slider: HSlider
+var _force_label: Label
 var _current_material: int = TileIndex.STONE
 var _current_brush_size: int = 2
 
@@ -24,6 +27,7 @@ func _ready() -> void:
 	_build_brush_type_row(vbox)
 	_build_material_row(vbox)
 	_build_size_row(vbox)
+	_build_force_row(vbox)
 	_update_material_highlight()
 
 
@@ -114,6 +118,31 @@ func _build_size_row(parent: Control) -> void:
 	var e_label = Label.new()
 	e_label.text = "E"
 	row.add_child(e_label)
+
+
+func _build_force_row(parent: Control) -> void:
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	parent.add_child(row)
+
+	var label = Label.new()
+	label.text = "Force:"
+	row.add_child(label)
+
+	_force_slider = HSlider.new()
+	_force_slider.min_value = 1.0
+	_force_slider.max_value = float(GlobalSettings.MAX_EDIT_FORCE)
+	_force_slider.value = float(GlobalSettings.DEFAULT_EDIT_FORCE)
+	_force_slider.step = 1.0
+	_force_slider.custom_minimum_size.x = 120
+	_force_slider.value_changed.connect(func(val: float): force_changed.emit(val); _force_label.text = str(int(val)))
+	row.add_child(_force_slider)
+
+	_force_label = Label.new()
+	_force_label.text = str(GlobalSettings.DEFAULT_EDIT_FORCE)
+	_force_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_force_label.custom_minimum_size.x = 24
+	row.add_child(_force_label)
 
 
 func select_material(tile_id: int) -> void:

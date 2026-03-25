@@ -17,10 +17,11 @@
 **1. Sub-tile hardness without data model changes — use directional edge hardness**
 
 The sub-tile mortar/brick distinction doesn't require per-pixel maps or a new data structure. Instead, give each tile type
-four edge-directional hardness values (N, S, E, W) stored as static data in TileIndex. The flood fill pays the *destination
-tile's entry cost from that direction* when crossing a boundary.
+four edge-directional hardness values (N, S, E, W) stored as static data in TileIndex. The flood fill pays the _destination
+tile's entry cost from that direction_ when crossing a boundary.
 
 Brick wall tile example:
+
 - N/S entry (through horizontal mortar joint): hardness 3
 - E/W entry (through brick face): hardness 5
 
@@ -32,10 +33,13 @@ edge hardness table.
 
 cell_id is currently always written as 0 and goes unused. It's the perfect fit for partial destruction state, requiring
 no data model changes:
+
 - cell_id 0: intact
 - cell_id 1: lightly damaged
 - cell_id 2: heavily damaged
 - (destroyed = replaced with AIR)
+
+note that if we do this, we should rename it from cell_id to damage_stage or something more intuitive.
 
 Each tile type in TileIndex declares `damage_stages: int` and provides textures for each stage. The shader already reads
 cell_id and samples the texture array; rendering is free. When force partially overcomes a tile's hardness — i.e.,
@@ -46,11 +50,12 @@ tile's effective hardness is reduced, so it breaks before its intact neighbors.
 
 There are two reasonable models; here's a concrete example to make the difference clear.
 
-*Setup*: force=10, mortar hardness=3, brick hardness=5. One brick surrounded by mortar on all 4 sides.
+_Setup_: force=10, mortar hardness=3, brick hardness=5. One brick surrounded by mortar on all 4 sides.
 
 **Max-path (Dijkstra) — chosen:**
 Force from the origin propagates outward, and each tile records the single best (highest) remaining force
 that could reach it from any one direction.
+
 - Origin → mortar: 10 − 3 = 7 remaining. Mortar breaks. Force = 7.
 - Mortar → brick (from one side): 7 − 5 = 2 remaining. Brick breaks. Force = 2 continues outward.
 - The other 3 mortar neighbors also arrive at the brick with 7, but since it already broke via the first
@@ -61,7 +66,8 @@ remaining force > 0 after paying that tile's cost.** Long paths through expensiv
 before reaching distant tiles. This is easy to predict and reason about as a player.
 
 **Sum-of-paths (not chosen):**
-Every separate path that arrives at a tile *adds* its remaining force together.
+Every separate path that arrives at a tile _adds_ its remaining force together.
+
 - All 4 mortar neighbors arrive at the brick simultaneously, each contributing 7.
 - Total force on brick = 4 × 7 = 28. Brick easily breaks.
 - A tile exposed from many sides takes much more effective damage than one reached from only one direction.
@@ -90,7 +96,7 @@ No falling debris. Instead, after phase 1 (flood fill) completes, run a small cl
 
 1. Collect all solid tiles adjacent to any newly-destroyed tile (the "border set").
 2. For each border tile not yet processed, BFS outward through connected solid tiles. Stop early once
-   the component size exceeds the threshold (e.g., 5 tiles).
+   the component size exceeds the threshold (e.g., 5 tiles, define this in settings).
 3. If BFS completes within the threshold: the component is a small orphaned cluster → destroy it.
 4. Batch the cluster destructions into the same `set_tiles_at_world_positions()` call (or a second
    immediate call) so the edit stays atomic from the chunk system's perspective.
@@ -107,7 +113,7 @@ path. Cap flood fill radius (e.g., 64 tiles max from origin) to bound worst-case
 ### Suggested implementation order
 
 1. Wire force to existing hardness values — make edits respect hardness (no flood fill yet, just "can I break this?")
-2. Add debug UI slider for force value
+2. Add debug UI slider for force value & update shader to visualize the new hardness & damage values (just for debugging, not final art, so make it obvious and clear)
 3. Add damage stages via cell_id — tile takes partial hits before breaking, effective hardness scales down
 4. Implement omnidirectional Dijkstra flood fill from click origin
 5. Add small orphaned cluster cleanup pass after flood fill

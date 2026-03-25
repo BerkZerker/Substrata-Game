@@ -9,3 +9,9 @@ const MAX_CHUNK_REMOVALS_PER_FRAME: int = 32 # Max number of chunks to remove pe
 const MAX_BUILD_QUEUE_SIZE: int = 128 # Max chunks waiting to be built (backpressure threshold)
 const MAX_CHUNK_POOL_SIZE: int = (2 * LOD_RADIUS + 1) * (2 * LOD_RADIUS + 1) * REGION_SIZE * REGION_SIZE # Matches max loaded chunks in generation radius
 const MAX_CONCURRENT_GENERATION_TASKS: int = 8 # Max parallel chunk generation tasks in WorkerThreadPool
+
+# Terrain editing
+const MAX_FLOOD_FILL_RADIUS: int = 64 # Max tiles from origin for flood fill
+const ORPHAN_CLUSTER_THRESHOLD: int = 5 # Max connected solid tiles before a cluster is considered "anchored"
+const DEFAULT_EDIT_FORCE: int = 10 # Default force value for terrain editing
+const MAX_EDIT_FORCE: int = 50 # Maximum force value for terrain editing

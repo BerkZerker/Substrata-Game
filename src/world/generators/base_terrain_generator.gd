@@ -6,7 +6,7 @@ class_name BaseTerrainGenerator extends RefCounted
 
 
 ## Generates terrain data for a chunk at the given position.
-## Returns a PackedByteArray with 2 bytes per tile: [tile_id, cell_id].
+## Returns a PackedByteArray with 2 bytes per tile: [tile_id, damage_stage].
 ## Size must be CHUNK_SIZE * CHUNK_SIZE * 2.
 func generate_chunk(_chunk_pos: Vector2i) -> PackedByteArray:
 	push_error("BaseTerrainGenerator.generate_chunk() must be overridden by subclass")
