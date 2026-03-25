@@ -8,7 +8,7 @@ Substrata is a 2D voxel-based game built in **Godot 4.6** using **GDScript**. It
 
 ## Running the Project
 
-Open in Godot 4.6 and press F5. To run headless tests: `./tests/run_tests.sh /path/to/godot`. See `docs/ENGINE_ARCHITECTURE.md` for full engine documentation.
+Open in Godot 4.6 and press F5.
 
 ## Code Style
 
@@ -23,7 +23,7 @@ Open in Godot 4.6 and press F5. To run headless tests: `./tests/run_tests.sh /pa
 The core system uses a background thread for chunk generation:
 
 - **ChunkManager** (`src/world/chunks/chunk_manager.gd`) — Main thread orchestrator. Monitors player position, queues chunk generation/removal, and processes built chunks each frame (max 16 builds, 32 removals per frame).
-- **ChunkLoader** (`src/world/chunks/chunk_loader.gd`) — Background worker thread. Generates terrain data and visual images off the main thread. Uses Mutex/Semaphore for synchronization with backpressure (pauses when build queue exceeds threshold).
+- **ChunkLoader** (`src/world/chunks/chunk_loader.gd`) — Parallel chunk generation scheduler using Godot's `WorkerThreadPool`. Manages a generation queue, submits tasks up to `MAX_CONCURRENT_GENERATION_TASKS`, and collects results in a build queue. Uses Mutex for synchronization with backpressure (pauses when build queue exceeds threshold).
 - **Chunk** (`src/world/chunks/chunk.gd`) — Individual chunk with terrain stored as `PackedByteArray` (2 bytes per tile: `[tile_id, cell_id]`). Uses a shared `QuadMesh` and a fragment shader for rendering. Mutex-protected terrain data.
 
 ### Rendering Pipeline
@@ -43,7 +43,7 @@ Custom **swept AABB** collision detection (`src/physics/collision_detector.gd`) 
 Four autoloaded singletons (registered in `project.godot`):
 
 - **SignalBus** (`src/globals/signal_bus.gd`) — Global event bus. Signals: `player_chunk_changed`, `tile_changed`, `chunk_loaded`, `chunk_unloaded`, `world_ready`, `world_saving`, `world_saved`, `entity_spawned`, `entity_despawned`.
-- **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `MAX_CHUNK_POOL_SIZE=512`, frame budget limits.
+- **GlobalSettings** (`src/globals/global_settings.gd`) — World constants: `CHUNK_SIZE=32`, `REGION_SIZE=4`, `LOD_RADIUS=4`, `REMOVAL_BUFFER=2`, `MAX_CHUNK_POOL_SIZE` (derived from LOD_RADIUS), `MAX_CONCURRENT_GENERATION_TASKS=8`, frame budget limits.
 - **TileIndex** (`src/globals/tile_index.gd`) — Data-driven tile registry. Registers tiles with ID, name, solidity, texture path, UI color, and properties (friction, damage, transparency, hardness). Builds a `Texture2DArray` for the terrain shader. Default tiles: `AIR=0, DIRT=1, GRASS=2, STONE=3`. New tiles can be added via `register_tile()` + `rebuild_texture_array()`. Properties use a defaults-merge pattern via `DEFAULT_PROPERTIES`.
 - **GameServices** (`src/globals/game_services.gd`) — Service locator for shared systems. Holds `chunk_manager`, `entity_manager`, `tile_registry`, `terrain_generator`, and `world_save_manager` references, populated by `GameInstance._ready()`.
 
@@ -73,7 +73,7 @@ GameInstance (Node)
 
 ### Persistence
 
-`WorldSaveManager` (`src/world/persistence/world_save_manager.gd`) — `RefCounted` that handles saving/loading world data. Saves world metadata as JSON and chunk terrain data as raw `PackedByteArray` files. Save path: `user://worlds/{name}/`. ChunkManager tracks dirty chunks and auto-saves them on unload and on exit. Only modified chunks are persisted.
+`WorldSaveManager` (`src/world/persistence/world_save_manager.gd`) — `RefCounted` that handles saving/loading world data. Saves world metadata as JSON and chunk terrain data as raw `PackedByteArray` files. Save path: `res://data/{name}/`. ChunkManager tracks dirty chunks and auto-saves them on unload and on exit. Only modified chunks are persisted.
 
 ### Terrain Editing
 

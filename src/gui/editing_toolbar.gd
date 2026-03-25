@@ -121,9 +121,9 @@ func select_material(tile_id: int) -> void:
 	_update_material_highlight()
 
 
-func set_brush_size(size: int) -> void:
-	_current_brush_size = size
-	_brush_size_label.text = str(size)
+func set_brush_size(brush_size: int) -> void:
+	_current_brush_size = brush_size
+	_brush_size_label.text = str(brush_size)
 
 
 func _update_material_highlight() -> void:

@@ -240,8 +240,8 @@ func stop() -> void:
 	_mutex.unlock()
 
 	# Wait for all active tasks to finish (with timeout)
-	var timeout_ms := 2000
-	var elapsed_ms := 0
+	var timeout_ms: int = 2000
+	var elapsed_ms: int = 0
 	while true:
 		_mutex.lock()
 		var remaining = _active_task_count
