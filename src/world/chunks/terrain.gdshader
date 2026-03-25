@@ -29,29 +29,18 @@ void fragment() {
 	vec2 tile_uv = world_position / texture_size;
 	COLOR = texture(tile_textures, vec3(tile_uv, tile_id));
 
-	// Apply damage darkening (damaged tiles get progressively darker/cracked look)
-	if (damage_stage > 0.5) {
-		float damage_factor = damage_stage / 3.0; // Normalize (max ~3 stages)
-		COLOR.rgb = mix(COLOR.rgb, COLOR.rgb * 0.4, clamp(damage_factor, 0.0, 0.8));
-
-		// Add crack pattern overlay for damaged tiles
-		vec2 crack_uv = fract(tile_uv * 4.0);
-		float crack = abs(crack_uv.x - 0.5) + abs(crack_uv.y - 0.5);
-		float crack_intensity = step(0.45, crack) * damage_factor * 0.5;
-		COLOR.rgb = mix(COLOR.rgb, vec3(0.1, 0.05, 0.0), crack_intensity);
+	// Uniform darkening per damage stage
+	if (damage_stage > 1.5) {
+		COLOR.rgb *= 0.65;
+	} else if (damage_stage > 0.5) {
+		COLOR.rgb *= 0.85;
 	}
 
-	// Debug visualization: overlay hardness as color tint
+	// Debug visualization: tint damaged tiles
 	if (debug_terrain) {
-		// Encode hardness info via tile_id ranges for debug coloring
-		// Green = low hardness (easy), Yellow = medium, Red = high hardness
-		// This is a rough visualization since we can't pass hardness per-tile to the shader
-		// Instead, use damage_stage to show damage state clearly
 		if (damage_stage > 1.5) {
-			// Heavily damaged — red tint
 			COLOR.rgb = mix(COLOR.rgb, vec3(1.0, 0.2, 0.1), 0.5);
 		} else if (damage_stage > 0.5) {
-			// Lightly damaged — yellow tint
 			COLOR.rgb = mix(COLOR.rgb, vec3(1.0, 0.9, 0.1), 0.4);
 		}
 	}

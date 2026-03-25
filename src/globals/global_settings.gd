@@ -12,6 +12,8 @@ const MAX_CONCURRENT_GENERATION_TASKS: int = 8 # Max parallel chunk generation t
 
 # Terrain editing
 const MAX_FLOOD_FILL_RADIUS: int = 64 # Max tiles from origin for flood fill
-const ORPHAN_CLUSTER_THRESHOLD: int = 5 # Max connected solid tiles before a cluster is considered "anchored"
+const ORPHAN_CLUSTER_THRESHOLD: int = 10 # Max connected solid tiles before a cluster is considered "anchored"
 const DEFAULT_EDIT_FORCE: int = 10 # Default force value for terrain editing
 const MAX_EDIT_FORCE: int = 50 # Maximum force value for terrain editing
+const FORCE_DECAY_PER_TILE: float = 0.85 # Multiplicative force decay after each tile break (0.0-1.0)
+const FORCE_DISTANCE_FACTOR: float = 1.5 # Max propagation distance = force * this factor

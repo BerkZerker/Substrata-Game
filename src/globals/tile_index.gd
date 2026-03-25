@@ -23,6 +23,7 @@ const DEFAULT_PROPERTIES: Dictionary = {
 	"transparency": 1.0,
 	"hardness": 1,
 	"damage_stages": 2, # Number of damage stages before destruction (0 = intact, stages 1..N, then destroyed = AIR)
+	"break_noise": 0.0, # Force variation per propagation step (0.0 = smooth circle, 0.5 = jagged edges)
 }
 
 ## Tile definitions: { tile_id: { "name": String, "solid": bool, "texture_path": String, "color": Color, "properties": Dictionary } }
@@ -40,7 +41,7 @@ func _ready() -> void:
 	register_tile(AIR, "Air", false, "", Color(0.7, 0.8, 0.9, 0.5), {"transparency": 0.0, "hardness": 0, "damage_stages": 0})
 	register_tile(DIRT, "Dirt", true, "res://assets/textures/dirt.png", Color(0.55, 0.35, 0.2), {"hardness": 3})
 	register_tile(GRASS, "Grass", true, "res://assets/textures/grass.png", Color(0.3, 0.7, 0.2), {"hardness": 2})
-	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 8, "damage_stages": 2})
+	register_tile(STONE, "Stone", true, "res://assets/textures/stone.png", Color(0.5, 0.5, 0.5), {"hardness": 8, "damage_stages": 2, "break_noise": 0.5})
 	rebuild_texture_array()
 
 

@@ -6,9 +6,10 @@
 ## After the flood fill, small orphaned clusters of solid tiles are cleaned up.
 class_name TerrainEditor extends RefCounted
 
-## Directions for 4-connected flood fill (N, S, E, W)
+## Directions for 8-connected flood fill (cardinal + diagonal)
 const NEIGHBORS: Array[Vector2] = [
-	Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)
+	Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0),
+	Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)
 ]
 
 
@@ -58,13 +59,15 @@ func _flood_fill(origin: Vector2, force: float, chunk_manager: ChunkManager) -> 
 		# Clicked on air — nothing to destroy
 		return []
 
-	# Start from the clicked solid tile
-	_pq_insert(open, [force, origin])
+	# Start from the clicked solid tile — entry: [force, pos, distance]
+	var max_dist = force * GlobalSettings.FORCE_DISTANCE_FACTOR
+	_pq_insert(open, [force, origin, 0.0])
 
 	while not open.is_empty():
 		var entry = open.pop_front() # Highest force first
 		var remaining_force: float = entry[0]
 		var pos: Vector2 = entry[1]
+		var distance: float = entry[2]
 
 		if visited.has(pos):
 			continue
@@ -73,6 +76,10 @@ func _flood_fill(origin: Vector2, force: float, chunk_manager: ChunkManager) -> 
 		# Radius check
 		if (pos - origin).length_squared() > max_radius_sq:
 			continue
+
+		# Apply distance-based force scaling (linear falloff to zero at max_dist)
+		var dist_scale = maxf(0.0, 1.0 - distance / max_dist)
+		var scaled_force = remaining_force * dist_scale
 
 		# Get current tile state
 		var tile_data = chunk_manager.get_tile_at_world_pos(pos)
@@ -86,21 +93,33 @@ func _flood_fill(origin: Vector2, force: float, chunk_manager: ChunkManager) -> 
 		# Calculate effective hardness (damaged tiles are weaker)
 		var effective_hardness: float = TileIndex.get_effective_hardness(tile_id, damage_stage)
 
-		if remaining_force >= effective_hardness:
+		if scaled_force >= effective_hardness:
 			# Full break — destroy tile
-			var force_after = remaining_force - effective_hardness
 			changes.append({
 				"pos": pos,
 				"tile_id": TileIndex.AIR,
 				"damage_stage": 0,
 			})
 
-			# Propagate remaining force to solid neighbors only
-			if force_after > 0.0:
-				for dir in NEIGHBORS:
-					var neighbor_pos = pos + dir
-					if not visited.has(neighbor_pos):
-						_pq_insert(open, [force_after, neighbor_pos])
+			# Propagate remaining force to neighbors
+			# Diagonal neighbors cost more (sqrt(2) ≈ 1.4x hardness)
+			var break_noise: float = TileIndex.get_tile_property(tile_id, "break_noise")
+			for dir in NEIGHBORS:
+				var neighbor_pos = pos + dir
+				if visited.has(neighbor_pos):
+					continue
+				var is_diagonal = absf(dir.x) + absf(dir.y) > 1.5
+				var dir_cost = effective_hardness * (1.4 if is_diagonal else 1.0)
+				var force_after = (scaled_force - dir_cost) * GlobalSettings.FORCE_DECAY_PER_TILE
+				if force_after <= 0.0:
+					continue
+				if break_noise > 0.0:
+					var h = _hash_pos(neighbor_pos)
+					force_after = force_after * (1.0 + break_noise * (h * 2.0 - 1.0))
+					force_after = maxf(0.0, force_after)
+				var step_dist = 1.4 if is_diagonal else 1.0
+				if force_after > 0.0:
+					_pq_insert(open, [force_after, neighbor_pos, distance + step_dist])
 		else:
 			# Partial damage — step up damage stage
 			var max_stages: int = TileIndex.get_damage_stages(tile_id)
@@ -196,6 +215,15 @@ func _cleanup_orphans(destruction_changes: Array, chunk_manager: ChunkManager) -
 				})
 
 	return orphan_changes
+
+
+## Deterministic hash of a tile position to a float in [0, 1].
+func _hash_pos(pos: Vector2) -> float:
+	var x: int = int(pos.x * 374761.0 + pos.y * 668265.0)
+	x = ((x >> 16) ^ x) * 0x45d9f3b
+	x = ((x >> 16) ^ x) * 0x45d9f3b
+	x = (x >> 16) ^ x
+	return float(x & 0xFFFF) / 65535.0
 
 
 ## Inserts an entry into the priority queue (sorted by force, highest first).
