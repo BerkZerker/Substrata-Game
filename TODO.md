@@ -69,7 +69,7 @@
 - [x] Smooth follow with frame-rate independent lerp
 - [x] Mouse wheel zoom with configurable step and limits
 - [x] Zoom presets (1x/2x/4x/8x) cycled with Z key
-- [x] Screen shake via `apply_shake(intensity, duration)` method
+- [ ] Screen shake and effects (deferred to Phase 4)
 
 ### 9. Entity System Foundation
 
@@ -77,45 +77,78 @@
 - [x] EntityManager with spawn/despawn lifecycle and monotonic ID assignment
 - [x] Entity signals on SignalBus (`entity_spawned`, `entity_despawned`)
 - [x] Wired into GameInstance and GameServices
-- [x] Entity-chunk awareness: serialize/despawn on chunk unload, respawn on chunk load
+- [ ] Entity spawn/despawn through ChunkManager awareness (deferred to Phase 4)
 
-## Phase 4: Physics & Visuals (Complete)
+## Phase 4: Physics & Visuals (Planned)
 
 ### 10. Collision Extensions
 
-- [x] Raycast queries via DDA grid traversal (`raycast()` on CollisionDetector)
-- [x] Area queries (`query_area()` on CollisionDetector)
-- [x] `get_tile_id_at_world_pos()` on ChunkManager for lightweight tile lookups
-- [x] `hit_tile_ids` populated in `sweep_aabb()` results (backwards compatible)
+- [ ] Raycast queries (line-of-sight, projectiles)
+- [ ] Area queries (explosion radius, detection zones)
+- [ ] Collision responses driven by tile properties (slippery ice, damaging lava, liquid water)
+- [ ] Moving tile support & physics-based tiles (rope bridge, falling sand, broken fragments etc.)
 
 ### 11. Lighting System
 
-- [x] Light emission property on TileIndex (`light_emission: 0-15`)
-- [x] B channel in terrain image carries baked light level (0.0–1.0)
-- [x] Static light baking via LightBaker (sunlight + emissive + BFS flood fill)
-- [x] Cross-chunk border light propagation from neighbor chunks
-- [x] Automatic rebake on terrain edits (edited chunk + neighbors)
-- [x] Dynamic point lights via LightManager (up to 16, quadratic falloff in shader)
-- [x] Day/night cycle via TimeOfDay (sine curve, 10-min default cycle)
-- [x] Ambient light uniform modulates baked sunlight per time of day
+- [ ] Light data channel in terrain (cell_id or separate array)
+- [ ] Light propagation algorithm (flood fill or see if engine has built in tools that would work)
+- [ ] Dynamic light sources (torches, sun)
+- [ ] Day/night cycle support
+- [ ] Emissive tiles (glowing mushrooms, lava)
 
-### 12. Updated Movement Controller
+## Phase 5: Content & Gameplay (Planned)
 
-- [x] Tile-driven friction (`use_tile_friction` opt-in, modulates by `TileIndex.get_friction()`)
-- [x] Tile damage callback (`use_tile_damage` + `on_tile_damage: Callable`)
-- [x] Exposed `last_floor_tile_ids` / `last_wall_tile_ids` for external systems
+### 12. Biome System
 
-## Phase 5: More stuff
+- [ ] Biome definition format (tile palette, generator params, spawn rules)
+- [ ] Biome map generation (Voronoi or noise-based region assignment)
+- [ ] Biome-aware terrain generator (swap palettes per biome)
+- [ ] Biome transitions / blending at boundaries
+
+### 13. Expanded Tile Set
+
+- [ ] Sand, Water, Gravel, Clay, Snow, Ice tile types
+- [ ] Ore tiles (Coal, Iron, Gold, etc.)
+- [ ] Decorative tiles (Flowers, Mushrooms, Vines)
+- [ ] Animated tiles (water flow, lava, fire, tree leaves sway)
+- [ ] Living tiles (trees that actually grow, grass spreading, vines that climb or drop)
+
+### 14. Health & Damage System
+
+- [ ] Health component (reusable, attachable to any entity)
+- [ ] Damage sources (fall damage, hazardous tiles, entity attacks)
+- [ ] Death and respawn logic
+- [ ] Invincibility frames / knockback
+
+### 15. Updated Movement Controller
+
+- [ ] Update player movement to support slippery tiles (ice), sticky tiles (mud), and damaging tiles (lava)
+- [ ] Add support for tile-based movement modifiers (e.g. speed boost on ice, slow on mud)
+- [ ] Make sure controller handles walls, slopes, moving platforms, and other complex terrain features
+
+### 16. Tools & Mining
+
+- [ ] Tool types with mining speed multipliers
+- [ ] Tool durability system
+- [ ] Tile hardness (time-to-break per tile type)
+- [ ] Mining particles / break animation
 
 ## Phase 6: Multiplayer (Planned)
 
-### 15. Multiplayer Support
+### 17. Multiplayer Support
 
 - [ ] Networked entity synchronization (position, state)
 - [ ] Chunk data synchronization on player join
 - [ ] LAN multiplayer support with Godot's high-level networking API
 
 ## Phase 7: Infrastructure & Tooling (Planned)
+
+### 18. CI / CD
+
+- [ ] GitHub Actions workflow for headless test suite
+- [ ] Automated export builds (Linux, Windows, macOS)
+- [ ] Lint / static analysis pass (gdlint or equivalent)
+- [ ] Version tagging and changelog generation
 
 ### 19. Performance Profiling
 
@@ -126,7 +159,10 @@
 
 ### 20. Asset Pipeline
 
+- [ ] Texture atlas auto-packing (beyond manual Texture2DArray)
 - [ ] Tile definition files (JSON/Resource) instead of code-only registration
+- [ ] Asset hot-reload support for rapid iteration
+- [ ] Sprite sheet support for animated tiles
 
 ## Human TODO
 

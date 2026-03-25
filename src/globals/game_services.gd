@@ -19,6 +19,3 @@ var world_save_manager: RefCounted = null
 
 ## Reference to the EntityManager, set by GameInstance._ready().
 var entity_manager: Node = null
-
-## Reference to the LightManager, set by GameInstance._ready().
-var light_manager: LightManager = null
