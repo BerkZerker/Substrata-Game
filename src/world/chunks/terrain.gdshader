@@ -36,12 +36,23 @@ void fragment() {
 		COLOR.rgb *= 0.85;
 	}
 
-	// Debug visualization: tint damaged tiles
+	// Debug visualization
 	if (debug_terrain) {
+		// Damage stage tint
 		if (damage_stage > 1.5) {
 			COLOR.rgb = mix(COLOR.rgb, vec3(1.0, 0.2, 0.1), 0.5);
 		} else if (damage_stage > 0.5) {
 			COLOR.rgb = mix(COLOR.rgb, vec3(1.0, 0.9, 0.1), 0.4);
 		}
+
+		// Hardness heatmap: pixel luminance → hardness proxy (inverted)
+		// Dark pixels (mortar/gaps) = high hardness → red tint
+		// Bright pixels (stone face) = low hardness → blue tint
+		float lum = dot(COLOR.rgb, vec3(0.299, 0.587, 0.114));
+		COLOR.rgb = mix(
+			vec3(1.0, 0.3, 0.2),  // Red = hard (low luminance / mortar)
+			vec3(0.2, 0.4, 1.0),  // Blue = soft (high luminance / stone face)
+			lum
+		);
 	}
 }

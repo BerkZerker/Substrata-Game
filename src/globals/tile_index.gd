@@ -107,6 +107,9 @@ func rebuild_texture_array() -> void:
 	_texture_array = Texture2DArray.new()
 	_texture_array.create_from_images(images)
 
+	# Generate directional edge hardness from texture brightness
+	_generate_edge_hardness()
+
 
 ## Returns the Texture2DArray for the terrain shader.
 func get_texture_array() -> Texture2DArray:
@@ -196,6 +199,108 @@ func get_effective_hardness(tile_id: int, damage_stage: int) -> float:
 		return base_hardness
 	var scale: float = 1.0 - (float(damage_stage) / float(max_stages))
 	return base_hardness * scale
+
+
+## Returns directional edge hardness for a tile based on entry direction.
+## Diagonals average the two relevant edges.
+func get_directional_hardness(tile_id: int, entry_dir: Vector2) -> float:
+	var tile = _tiles.get(tile_id)
+	if not tile or not tile.has("edge_hardness"):
+		return float(get_hardness(tile_id))
+	var edges = tile["edge_hardness"]
+	var h = 0.0
+	var count = 0
+	if entry_dir.y < -0.5: # Entering from above → north edge
+		h += edges["n"]; count += 1
+	if entry_dir.y > 0.5: # Entering from below → south edge
+		h += edges["s"]; count += 1
+	if entry_dir.x < -0.5: # Entering from left → west edge
+		h += edges["w"]; count += 1
+	if entry_dir.x > 0.5: # Entering from right → east edge
+		h += edges["e"]; count += 1
+	if count == 0:
+		return float(get_hardness(tile_id))
+	return h / float(count)
+
+
+## Returns effective directional hardness accounting for damage stage.
+func get_effective_directional_hardness(tile_id: int, damage_stage: int, entry_dir: Vector2) -> float:
+	var base = get_directional_hardness(tile_id, entry_dir)
+	var max_stages: int = get_damage_stages(tile_id)
+	if max_stages <= 0:
+		return base
+	var scale: float = 1.0 - (float(damage_stage) / float(max_stages))
+	return base * scale
+
+
+# Generates directional edge hardness for all registered tiles from their textures.
+func _generate_edge_hardness() -> void:
+	for id in _tiles:
+		var tile = _tiles[id]
+		var tex_path: String = tile["texture_path"]
+		var base_hardness: float = float(tile["properties"]["hardness"])
+
+		if tex_path == "" or base_hardness <= 0.0:
+			tile["edge_hardness"] = {"n": 0.0, "s": 0.0, "e": 0.0, "w": 0.0}
+			continue
+
+		var tex = load(tex_path) as Texture2D
+		if not tex:
+			tile["edge_hardness"] = {"n": base_hardness, "s": base_hardness, "e": base_hardness, "w": base_hardness}
+			continue
+
+		var img = tex.get_image()
+		if img.get_format() != Image.FORMAT_RGBA8:
+			img.convert(Image.FORMAT_RGBA8)
+
+		var size = img.get_width()
+
+		# Compute overall average luminance
+		var total_lum = 0.0
+		for y in range(size):
+			for x in range(size):
+				total_lum += _pixel_luminance(img.get_pixel(x, y))
+		var avg_lum = total_lum / float(size * size)
+
+		if avg_lum < 0.001:
+			tile["edge_hardness"] = {"n": base_hardness, "s": base_hardness, "e": base_hardness, "w": base_hardness}
+			continue
+
+		# Compute edge average luminances
+		var north_lum = 0.0
+		var south_lum = 0.0
+		var west_lum = 0.0
+		var east_lum = 0.0
+		for i in range(size):
+			north_lum += _pixel_luminance(img.get_pixel(i, 0))
+			south_lum += _pixel_luminance(img.get_pixel(i, size - 1))
+			west_lum += _pixel_luminance(img.get_pixel(0, i))
+			east_lum += _pixel_luminance(img.get_pixel(size - 1, i))
+		north_lum /= float(size)
+		south_lum /= float(size)
+		west_lum /= float(size)
+		east_lum /= float(size)
+
+		# Scale base hardness by INVERSE edge brightness relative to average
+		# Dark edges (mortar) = high hardness, bright edges (stone face) = low hardness
+		tile["edge_hardness"] = {
+			"n": base_hardness * (avg_lum / maxf(north_lum, 0.001)),
+			"s": base_hardness * (avg_lum / maxf(south_lum, 0.001)),
+			"e": base_hardness * (avg_lum / maxf(east_lum, 0.001)),
+			"w": base_hardness * (avg_lum / maxf(west_lum, 0.001)),
+		}
+
+		print("TileIndex: %s edge hardness N=%.2f S=%.2f E=%.2f W=%.2f (base=%d)" % [
+			tile["name"],
+			tile["edge_hardness"]["n"], tile["edge_hardness"]["s"],
+			tile["edge_hardness"]["e"], tile["edge_hardness"]["w"],
+			int(base_hardness)
+		])
+
+
+# Computes perceptual luminance from a color.
+func _pixel_luminance(c: Color) -> float:
+	return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b
 
 
 # Creates a transparent placeholder image for tiles without textures.

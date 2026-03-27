@@ -102,14 +102,23 @@ func _flood_fill(origin: Vector2, force: float, chunk_manager: ChunkManager) -> 
 			})
 
 			# Propagate remaining force to neighbors
-			# Diagonal neighbors cost more (sqrt(2) ≈ 1.4x hardness)
+			# Cost is the destination tile's directional hardness (texture-driven)
+			# Diagonal neighbors cost 1.4x more (sqrt(2) distance)
 			var break_noise: float = TileIndex.get_tile_property(tile_id, "break_noise")
 			for dir in NEIGHBORS:
 				var neighbor_pos = pos + dir
 				if visited.has(neighbor_pos):
 					continue
+				# Look up neighbor tile to get its directional entry cost
+				var neighbor_data = chunk_manager.get_tile_at_world_pos(neighbor_pos)
+				var neighbor_tile_id: int = neighbor_data[0]
+				var neighbor_damage: int = neighbor_data[1]
+				if neighbor_tile_id == TileIndex.AIR:
+					continue
 				var is_diagonal = absf(dir.x) + absf(dir.y) > 1.5
-				var dir_cost = effective_hardness * (1.4 if is_diagonal else 1.0)
+				var dir_cost = TileIndex.get_effective_directional_hardness(neighbor_tile_id, neighbor_damage, dir)
+				if is_diagonal:
+					dir_cost *= 1.4
 				var force_after = (scaled_force - dir_cost) * GlobalSettings.FORCE_DECAY_PER_TILE
 				if force_after <= 0.0:
 					continue
