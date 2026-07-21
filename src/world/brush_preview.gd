@@ -1,7 +1,11 @@
+## World-space outline showing where/how large the next terrain edit will be.
+## Tracks the mouse in world coordinates; reads brush size from GameServices
+## directly (same lazy-lookup pattern as DebugHUD/CursorInfo use for chunk_manager).
 class_name BrushPreview extends Node2D
 
 
 func _ready() -> void:
+	# Value can change (Q/E) without the mouse moving, so redraw on that too.
 	SignalBus.brush_value_changed.connect(func(_value: float): queue_redraw())
 
 
@@ -10,6 +14,8 @@ func _process(_delta: float) -> void:
 	if not camera:
 		return
 
+	# Snap to whole tiles to match where an edit would actually land, and only
+	# redraw when the tile actually changes rather than every frame.
 	var snapped_pos = camera.get_global_mouse_position().snapped(Vector2(1, 1))
 	if snapped_pos != global_position:
 		global_position = snapped_pos

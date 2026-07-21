@@ -1,9 +1,14 @@
 ## Mouse/keyboard-driven terrain editing: digging, placing, material + brush value selection.
+##
+## Lives outside src/gui/ on purpose: this is gameplay input, not UI. It uses
+## _unhandled_input rather than a full-screen Control, so real GUI widgets
+## (e.g. the hotbar) naturally consume clicks before they ever reach here.
 class_name TerrainEditController extends Node
 
 var _terrain_editor: TerrainEditor = TerrainEditor.new()
 
 var _current_material: int = TileIndex.STONE
+# Single value driving both LMB dig force and RMB place radius (brush is circle-only).
 var _current_brush_value: float = float(GlobalSettings.DEFAULT_BRUSH_VALUE)
 var _is_editing: bool = false
 var _is_destroying: bool = false
@@ -19,6 +24,7 @@ func _process(_delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
+		# Only reaches here if no Control (e.g. a hotbar slot) already consumed the click.
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_is_destroying = event.pressed
 			if _is_destroying:
@@ -42,7 +48,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			Chunk.debug_terrain = not Chunk.debug_terrain
 			GameServices.chunk_manager.set_debug_terrain(Chunk.debug_terrain)
 
-	# Material selection: number keys 1-9 map to tile IDs in registry order
+	# Material selection: number keys 1-9 map to tile IDs in registry order.
+	# Kept as a raw keycode loop (rather than 9 fixed InputMap actions) since the
+	# material list is data-driven from TileIndex, not a fixed set.
 	var number_keys = [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9]
 	var tile_ids = TileIndex.get_tile_ids()
 	for i in range(mini(number_keys.size(), tile_ids.size())):
@@ -50,6 +58,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			set_material(tile_ids[i])
 
 
+## Called both from the number-key handler above and externally by the hotbar on click.
 func set_material(tile_id: int) -> void:
 	_current_material = tile_id
 	SignalBus.material_selected.emit(tile_id)
@@ -97,6 +106,8 @@ func _apply_edit() -> void:
 	var changes = []
 	var r = roundi(_current_brush_value)
 
+	# Circle-only brush: square shape was removed, so this is just a radius test
+	# over the bounding box rather than a shape-type branch.
 	for x in range(-r, r + 1):
 		for y in range(-r, r + 1):
 			var offset = Vector2(x, y)

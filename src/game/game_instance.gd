@@ -3,6 +3,7 @@ class_name GameInstance extends Node
 
 @onready var chunk_manager: ChunkManager = $ChunkManager
 @onready var entity_manager: EntityManager = $EntityManager
+# Owns dig/place input handling; registered below so the GUI/hotbar can reach it via GameServices.
 @onready var terrain_edit_controller: TerrainEditController = $TerrainEditController
 
 var _save_manager: WorldSaveManager

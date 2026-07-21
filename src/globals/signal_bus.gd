@@ -15,5 +15,9 @@ signal world_saved()
 signal entity_spawned(entity: Node2D)
 signal entity_despawned(entity: Node2D)
 
+## Emitted by TerrainEditController when the selected placement material changes
+## (via hotbar click or number key), so the hotbar can update its highlight.
 signal material_selected(tile_id: int)
+## Emitted by TerrainEditController when the unified dig-force/place-radius value
+## changes (Q/E), so the hotbar readout and world brush preview can redraw.
 signal brush_value_changed(value: float)

@@ -8,12 +8,16 @@ const MAX_SLOTS: int = 9
 @onready var _slots_row: HBoxContainer = %SlotsRow
 @onready var _value_label: Label = %ValueLabel
 
-var _button_group: ButtonGroup = ButtonGroup.new()
-var _slot_buttons: Dictionary = {} # tile_id -> Button
+var _button_group: ButtonGroup = ButtonGroup.new() # Gives mutually-exclusive slot highlighting for free
+var _slot_buttons: Dictionary = {} # tile_id -> Button, for quick lookup when reacting to external selection changes
 
 
 func _ready() -> void:
 	_build_slots()
+
+	# Mirror TerrainEditController's own defaults here rather than querying it directly:
+	# GameInstance._ready() (which registers GameServices.terrain_edit_controller) runs
+	# after all children's _ready(), so it isn't available yet at this point.
 	_value_label.text = _format_value(GlobalSettings.DEFAULT_BRUSH_VALUE)
 	_select_slot(TileIndex.STONE)
 
@@ -21,6 +25,7 @@ func _ready() -> void:
 	SignalBus.brush_value_changed.connect(_on_brush_value_changed)
 
 
+## Populates one slot per registered tile (capped to MAX_SLOTS, matching the 1-9 key range).
 func _build_slots() -> void:
 	var tile_ids = TileIndex.get_tile_ids()
 
@@ -31,6 +36,8 @@ func _build_slots() -> void:
 		slot.tooltip_text = TileIndex.get_tile_name(tile_id)
 		slot.get_node("%KeyLabel").text = str(i + 1)
 		slot.get_node("%Icon").texture = _get_slot_icon(tile_id)
+		# By the time a slot is actually clicked, GameInstance._ready() has long since
+		# run, so terrain_edit_controller is guaranteed to be set here.
 		slot.pressed.connect(func(): GameServices.terrain_edit_controller.set_material(tile_id))
 
 		_slots_row.add_child(slot)
@@ -42,12 +49,15 @@ func _get_slot_icon(tile_id: int) -> Texture2D:
 	if not texture_path.is_empty():
 		return load(texture_path)
 
-	# Materials without art (e.g. Air) fall back to a flat color swatch.
+	# Materials without art (e.g. Air) fall back to a flat color swatch,
+	# built as a 1x1 texture so it stretches to fill the icon rect.
 	var image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
 	image.set_pixel(0, 0, TileIndex.get_tile_color(tile_id))
 	return ImageTexture.create_from_image(image)
 
 
+## Highlights the slot for tile_id via the ButtonGroup (called on click and on
+## external changes, e.g. a number-key press handled by TerrainEditController).
 func _select_slot(tile_id: int) -> void:
 	if _slot_buttons.has(tile_id):
 		_slot_buttons[tile_id].button_pressed = true

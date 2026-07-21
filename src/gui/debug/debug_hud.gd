@@ -1,8 +1,10 @@
+## Top-left perf/world debug readout (FPS, player position, chunk manager
+## queue sizes). Hidden by default; F3 toggles it.
 class_name DebugHUD extends PanelContainer
 
 @onready var _label: Label = %Label
 
-var _player: Node = null
+var _player: Node = null # Resolved lazily since Player may not exist yet on first _process
 
 
 func _unhandled_input(event: InputEvent) -> void:

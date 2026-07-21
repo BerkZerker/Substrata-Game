@@ -1,6 +1,8 @@
+## Small tooltip-style readout that follows the mouse and shows the tile
+## under the cursor. Visible by default; F2 toggles it off.
 class_name CursorInfo extends Control
 
-const UPDATE_INTERVAL: float = 0.05
+const UPDATE_INTERVAL: float = 0.05 # Tile lookups are throttled to this interval, not every frame
 
 @onready var _label: Label = %Label
 

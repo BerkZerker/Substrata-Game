@@ -1,3 +1,5 @@
+## Static F1 help panel. Text is authored directly on the Label in
+## controls_overlay.tscn; this script only handles the show/hide toggle.
 class_name ControlsOverlay extends PanelContainer
 
 
