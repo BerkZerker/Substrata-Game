@@ -19,3 +19,6 @@ var world_save_manager: RefCounted = null
 
 ## Reference to the EntityManager, set by GameInstance._ready().
 var entity_manager: Node = null
+
+## Reference to the TerrainEditController, set by GameInstance._ready().
+var terrain_edit_controller: TerrainEditController = null

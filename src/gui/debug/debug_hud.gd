@@ -1,21 +1,13 @@
 class_name DebugHUD extends PanelContainer
 
-var _label: Label
+@onready var _label: Label = %Label
+
 var _player: Node = null
 
 
-func _ready() -> void:
-	var style = StyleBoxFlat.new()
-	style.bg_color = Color(0, 0, 0, 0.6)
-	style.set_corner_radius_all(4)
-	style.set_content_margin_all(8)
-	add_theme_stylebox_override("panel", style)
-
-	_label = Label.new()
-	_label.add_theme_font_size_override("font_size", 13)
-	add_child(_label)
-
-	visible = false
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_debug_hud"):
+		visible = not visible
 
 
 func _process(_delta: float) -> void:

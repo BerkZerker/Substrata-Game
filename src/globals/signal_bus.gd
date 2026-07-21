@@ -14,3 +14,6 @@ signal world_saved()
 
 signal entity_spawned(entity: Node2D)
 signal entity_despawned(entity: Node2D)
+
+signal material_selected(tile_id: int)
+signal brush_value_changed(value: float)

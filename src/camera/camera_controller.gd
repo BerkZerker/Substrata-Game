@@ -44,7 +44,7 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton:
+	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			var new_val = clampf(zoom.x * (1.0 + zoom_step), min_zoom.x, max_zoom.x)
 			zoom = Vector2(new_val, new_val)

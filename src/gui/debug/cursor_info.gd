@@ -2,21 +2,14 @@ class_name CursorInfo extends Control
 
 const UPDATE_INTERVAL: float = 0.05
 
-var _label: Label
+@onready var _label: Label = %Label
+
 var _time_since_update: float = 0.0
 
 
-func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	_label = Label.new()
-	_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_label.add_theme_font_size_override("font_size", 13)
-	_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.9))
-	_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	_label.add_theme_constant_override("shadow_offset_x", 1)
-	_label.add_theme_constant_override("shadow_offset_y", 1)
-	add_child(_label)
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("toggle_cursor_info"):
+		visible = not visible
 
 
 func _process(delta: float) -> void:
