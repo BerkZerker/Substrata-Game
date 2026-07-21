@@ -1,3 +1,7 @@
+// Renders a chunk from its data texture: R channel = tile_id, G channel = damage_stage
+// (both 0-255, written by Chunk/ChunkLoader as normalized 0-1 pixel values). Samples
+// the matching layer of the shared tile Texture2DArray and darkens per damage stage.
+// debug_terrain swaps in a hardness/damage heatmap for tuning tile art and edit balance.
 shader_type canvas_item;
 
 uniform sampler2D chunk_data_texture : filter_nearest;

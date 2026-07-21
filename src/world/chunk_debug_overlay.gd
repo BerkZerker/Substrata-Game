@@ -1,3 +1,7 @@
+## F4-toggled world-space overlay for chunk streaming: loaded regions, chunk
+## outlines, and generation/removal queue state. Polls ChunkManager.get_debug_info()
+## every DEBUG_UPDATE_INTERVAL frames rather than every frame, since the queue
+## contents change slowly relative to render rate.
 class_name ChunkDebugOverlay extends Node2D
 
 # Colors
