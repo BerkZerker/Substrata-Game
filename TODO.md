@@ -6,8 +6,23 @@
 
 ## Remaining follow-ups
 
-- [ ] Tool-driven force (pickaxe, explosive, drill with fixed force values and directional bias) — currently force comes from a single Q/E-adjustable `brush_value` on `TerrainEditController`, not per-tool.
-- [ ] Directional edge hardness is auto-derived from texture brightness (`TileIndex._generate_edge_hardness`) rather than hand-authored per-tile N/S/E/W tables — works well for the current tile set, but a manual override path may be worth adding for tiles where brightness doesn't correlate with structure (e.g. hand-painted brick/mortar art).
+- [ ] Tool-driven force (pickaxe, explosive, drill with fixed force values and directional bias) — currently force comes from a single Q/E-adjustable `brush_value` (1–50) on `TerrainEditController` that doubles as the place radius, not per-tool.
+- [ ] Directional edge hardness is auto-derived from texture luminance (`TileIndex._generate_edge_hardness`) rather than hand-authored per-tile N/S/E/W tables — works for the current three-texture tile set, but a manual override path may be worth adding for tiles where brightness doesn't correlate with structure (e.g. hand-painted brick/mortar art).
+- [ ] Per-stage damage art. Damage stages are currently rendered as uniform darkening in `terrain.gdshader` (85% / 65%), not per-stage textures, and the shader only distinguishes stages 0/1/2+ even though `damage_stages` is per-tile data.
+- [ ] Save path is `res://data/` (`WorldSaveManager.WORLDS_BASE_PATH`), and the world name is the random per-run seed, so every launch creates a new world folder unless `world_seed` is pinned in `chunk_manager.tscn`. The class docstring still says `user://worlds/`. Decide on the real location (`user://` for exports) and a world-selection flow, then reconcile the docstring and `.gitignore` (which still whitelists `data/.gdignore` / `data/.gitkeep`, both deleted in `055f32a`).
+- [ ] `move_up` / `move_down` input actions (W/S) are still defined in `project.godot` but nothing reads them.
+
+## As built vs. the design notes below
+
+The design notes were written before implementation; these are the places where the code deliberately differs:
+
+- **Force input** is Q/E on a `brush_value` with a hotbar readout, not a debug slider.
+- **Orphan threshold** is 10 tiles (`GlobalSettings.ORPHAN_CLUSTER_THRESHOLD`), not 5.
+- **Neighborhood** is 8-connected; diagonal steps cost 1.4x hardness and 1.4 distance.
+- **Extra falloff** beyond the pure "drain by hardness" model: multiplicative `FORCE_DECAY_PER_TILE` (0.85) per break, linear distance falloff to zero at `force * FORCE_DISTANCE_FACTOR` (1.5), a hard `MAX_FLOOD_FILL_RADIUS` (64), and per-tile `break_noise` jitter (stone = 0.5) for jagged edges.
+- **Break test vs. propagation cost** are separate: a tile breaks if incoming force ≥ its non-directional effective hardness; the directional edge hardness is what's paid when force crosses into a neighbor.
+- **Edge hardness direction:** dark edge pixels are _harder_ (`base * avg_lum / edge_lum`), bright ones softer — the shader heatmap uses the same convention (red = hard/dark, blue = soft/bright).
+- **`cell_id` → `damage_stage`** rename is done throughout (`Chunk`, `ChunkLoader`, generators, shader G channel).
 
 ## Claude's notes
 
@@ -21,7 +36,7 @@
 
 ### Resolved design questions (grounded in the actual codebase)
 
-**1. Sub-tile hardness without data model changes — use directional edge hardness**
+### 1. Sub-tile hardness without data model changes — use directional edge hardness
 
 The sub-tile mortar/brick distinction doesn't require per-pixel maps or a new data structure. Instead, give each tile type
 four edge-directional hardness values (N, S, E, W) stored as static data in TileIndex. The flood fill pays the _destination
@@ -36,7 +51,7 @@ Force naturally flows along mortar lines first (cheap), then stalls at brick fac
 "breaks along material structure" behavior described, with zero terrain data changes. New tile types just define their own
 edge hardness table.
 
-**2. cell_id is already the damage stage slot — use it**
+### 2. cell_id is already the damage stage slot — use it
 
 cell_id is currently always written as 0 and goes unused. It's the perfect fit for partial destruction state, requiring
 no data model changes:
@@ -53,7 +68,7 @@ cell_id and samples the texture array; rendering is free. When force partially o
 `0 < force < hardness` — the tile steps up one damage stage and the flood fill stops there. On subsequent edits, a damaged
 tile's effective hardness is reduced, so it breaks before its intact neighbors.
 
-**3. Force propagation algorithm — max-path Dijkstra (chosen)**
+### 3. Force propagation algorithm — max-path Dijkstra (chosen)
 
 There are two reasonable models; here's a concrete example to make the difference clear.
 
@@ -91,13 +106,13 @@ two clicks rather than one. Within a single edit, max-path is simpler, cheaper, 
 Implementation: Dijkstra priority queue ordered by remaining force (highest first). Each tile visited
 at most once. Priority queue entry: `(remaining_force, tile_pos)`.
 
-**4. Force input — debug slider for now, tool-driven later**
+### 4. Force input — debug slider for now, tool-driven later
 
 A slider in the debug UI controls force (e.g., 1–50). In the future, different tools (pickaxe,
 explosive, drill) will each have a fixed force value and potentially directional bias baked in. For now,
 omnidirectional from click origin at whatever force the slider is set to.
 
-**5. Structural instability — destroy small orphaned clusters, no physics**
+### 5. Structural instability — destroy small orphaned clusters, no physics
 
 No falling debris. Instead, after phase 1 (flood fill) completes, run a small cluster cleanup pass:
 
@@ -112,16 +127,16 @@ This prevents single floating tiles and small orphaned fragments without physics
 keeps cost bounded — you never traverse more than `threshold` tiles per border tile. One pass is enough;
 cascading re-checks are not needed for reasonable gameplay.
 
-**6. Thread safety — flood fill stays on main thread**
+### 6. Thread safety — flood fill stays on main thread
 
 Flood fill reads terrain data to decide what to break, then writes through the existing locked batch-edit
 path. Cap flood fill radius (e.g., 64 tiles max from origin) to bound worst-case cost per click.
 
-### Suggested implementation order
+### Implementation order (all complete)
 
-1. Wire force to existing hardness values — make edits respect hardness (no flood fill yet, just "can I break this?")
-2. Add debug UI slider for force value & update shader to visualize the new hardness & damage values (just for debugging, not final art, so make it obvious and clear)
-3. Add damage stages via cell_id — tile takes partial hits before breaking, effective hardness scales down
-4. Implement omnidirectional Dijkstra flood fill from click origin
-5. Add small orphaned cluster cleanup pass after flood fill
-6. Add directional edge hardness to TileIndex — unlock mortar/brick behavior (separate milestone)
+1. [x] Wire force to existing hardness values — make edits respect hardness
+2. [x] Add a force control & update shader to visualize hardness & damage values (landed as Q/E `brush_value` + T heatmap, not a slider)
+3. [x] Add damage stages via `damage_stage` — tile takes partial hits before breaking, effective hardness scales down
+4. [x] Implement omnidirectional Dijkstra flood fill from click origin
+5. [x] Add small orphaned cluster cleanup pass after flood fill
+6. [x] Add directional edge hardness to TileIndex (texture-derived rather than hand-authored)
