@@ -45,6 +45,12 @@ Brick Build Mode (Press B)
   V or O .......... Cycle Overlap Mode
   R / , / . ....... Rotate 90 / -15 / +15 deg
 
+Lighting
+  L ............... Cycle Mode (Smooth / Pixel-Art / Blocky / Off)
+  F ............... Toggle Player Lantern (Dynamic)
+  C ............... Toggle Cursor Light (Dynamic)
+  9 ............... Select Lantern Tile (Static Baked)
+
 Debug & UI
   F1 .............. This Help
   F2 .............. Cursor Info
@@ -155,6 +161,7 @@ impl GuiSystem {
         self.build_hotbar(
             input,
             camera.viewport_size,
+            chunk_manager,
             tile_registry,
             edit_controller,
             signal_bus,
@@ -196,6 +203,7 @@ impl GuiSystem {
         &self,
         input: &mut InputState,
         viewport_size: Vec2,
+        chunk_manager: &ChunkManager,
         tile_registry: &TileRegistry,
         edit_controller: &mut TerrainEditController,
         signal_bus: &mut SignalBus,
@@ -214,6 +222,7 @@ impl GuiSystem {
 
         let slots_row_width =
             (slot_count as f32) * slot_size.x + ((slot_count.saturating_sub(1)) as f32) * separation;
+        let light_mode_name = chunk_manager.dynamic_lights.lighting_mode.name();
         let value_text = if edit_controller.build_tool.active {
             let pat_name = edit_controller
                 .patterns
@@ -221,19 +230,21 @@ impl GuiSystem {
                 .map(|p| p.name())
                 .unwrap_or("?");
             format!(
-                "BUILD [B] : {}  |  {} (V)  |  Snap:{} (G)",
+                "BUILD [B] : {}  |  {} (V)  |  Snap:{} (G)  |  Light [L]: {}",
                 pat_name,
                 edit_controller.build_tool.overlap.name(),
                 if edit_controller.build_tool.snap {
                     "ON"
                 } else {
                     "OFF"
-                }
+                },
+                light_mode_name
             )
         } else {
             format!(
-                "BRUSH [B] : {}  (Q/E)",
-                edit_controller.get_current_brush_value().round() as i32
+                "BRUSH [B] : {} (Q/E)  |  Light [L]: {}",
+                edit_controller.get_current_brush_value().round() as i32,
+                light_mode_name
             )
         };
         let value_size = UiBatch::measure_text(&value_text, font_size);
@@ -421,9 +432,10 @@ impl GuiSystem {
         let pos = player.position;
         let vel = player.get_movement_velocity();
         let floor = player.get_on_floor();
+        let dl = &chunk_manager.dynamic_lights;
 
         let text = format!(
-            "FPS: {}\nPos: ({:.1}, {:.1})\nVel: ({:.1}, {:.1})  Floor: {}\nZoom: {:.1}x\nChunk: ({}, {})  Region: ({}, {})\n--- Chunks ---\nLoaded: {}  Gen Queue: {}\nIn Progress: {}  Build: {}\nActive Tasks: {}  Removal: {}",
+            "FPS: {}\nPos: ({:.1}, {:.1})\nVel: ({:.1}, {:.1})  Floor: {}\nZoom: {:.1}x\nChunk: ({}, {})  Region: ({}, {})\n--- Lighting ---\nMode [L]: {}\nPlayer [F]: {}  Cursor [C]: {}\nStatic Rebakes: {}  Dyn Rebakes: {}\n--- Chunks ---\nLoaded: {}  Gen Queue: {}\nIn Progress: {}  Build: {}\nActive Tasks: {}  Removal: {}",
             fps,
             pos.x,
             pos.y,
@@ -435,6 +447,11 @@ impl GuiSystem {
             info.player_chunk.y,
             info.player_region.x,
             info.player_region.y,
+            dl.lighting_mode.name(),
+            if dl.player_light_enabled { "ON" } else { "OFF" },
+            if dl.cursor_light_enabled { "ON" } else { "OFF" },
+            dl.last_frame_static_rebakes,
+            dl.last_frame_dynamic_rebakes,
             info.loaded_count,
             info.generation_queue_size,
             info.in_progress_size,
@@ -477,23 +494,31 @@ impl GuiSystem {
             let world_pos = camera.screen_to_world(input.mouse_pos);
             let tile_pos = IVec2::new(world_pos.x.floor() as i32, world_pos.y.floor() as i32);
             let [tile_id, damage_stage] = chunk_manager.get_tile_at_world_pos(world_pos);
+            let [lr, lg, lb, lsky] = chunk_manager.get_light_at_world_pos(world_pos);
             let tile_name = tile_registry.get_tile_name(tile_id);
 
             let mut base_line = if tile_id == AIR {
-                format!("({}, {}) {}", tile_pos.x, tile_pos.y, tile_name)
+                format!(
+                    "({}, {}) {}  Sky:{} RGB:({},{},{})",
+                    tile_pos.x, tile_pos.y, tile_name, lsky, lr, lg, lb
+                )
             } else {
                 let hardness = tile_registry.get_hardness(tile_id);
                 let eff_hardness = tile_registry.get_effective_hardness(tile_id, damage_stage);
                 let max_stages = tile_registry.get_damage_stages(tile_id);
                 format!(
-                    "({}, {}) {}  H:{}  Eff:{:.1}  Dmg:{}/{}",
+                    "({}, {}) {}  H:{}  Eff:{:.1}  Dmg:{}/{}  Sky:{} RGB:({},{},{})",
                     tile_pos.x,
                     tile_pos.y,
                     tile_name,
                     hardness,
                     eff_hardness,
                     damage_stage,
-                    max_stages
+                    max_stages,
+                    lsky,
+                    lr,
+                    lg,
+                    lb
                 )
             };
 

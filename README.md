@@ -89,9 +89,13 @@ Both dig and place re-apply only when the mouse moves to a new tile while held. 
 | Left Click (hold)  | Dig (force-based destruction, Dijkstra flood fill)       |
 | Right Click (hold) | Place selected material (circular brush)                 |
 | Q/E                | Decrease/increase brush value (dig force / place radius) |
+| B                  | Toggle Brick Builder mode                                |
 | Scroll wheel       | Zoom in/out (10% per tick, 0.5x–10x)                     |
 | Z                  | Cycle zoom presets (1x/2x/4x/8x)                         |
-| 1-9                | Select material (also clickable on the hotbar)           |
+| 1-9                | Select material (Slot 9 = Lantern static light tile)     |
+| L                  | Cycle lighting style (Smooth / Pixel-Art / Blocky / Off) |
+| F                  | Toggle player lantern (dynamic light)                    |
+| C                  | Toggle cursor inspection light (dynamic light)           |
 | T                  | Toggle terrain debug heatmap                             |
 
 ## Project Structure

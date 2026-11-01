@@ -7,14 +7,18 @@ use crate::engine::renderer::chunk_pass::{ChunkInstance, ChunkPass};
 use crate::engine::renderer::Renderer;
 use crate::game::settings::{
     CHUNK_SIZE, LOD_RADIUS, MAX_CHUNK_BUILDS_PER_FRAME, MAX_CHUNK_POOL_SIZE,
-    MAX_CHUNK_REMOVALS_PER_FRAME, REGION_SIZE, REMOVAL_BUFFER,
+    MAX_CHUNK_REMOVALS_PER_FRAME, MAX_STATIC_LIGHT_RADIUS, PADDED_CHUNK_LIGHT_BYTE_LEN,
+    REGION_SIZE, REMOVAL_BUFFER,
 };
 use crate::game::signals::{GameSignal, SignalBus};
-use crate::game::tiles::TileRegistry;
+use crate::game::tiles::{TileRegistry, GLASS};
 use crate::game::world::chunk::{Chunk, LocalTileChange};
 use crate::game::world::chunk_loader::ChunkLoader;
 use crate::game::world::generator::{
     BaseTerrainGenerator, SimplexConfig, SimplexTerrainGenerator,
+};
+use crate::game::world::lighting::{
+    bake_static_light_region, build_padded_chunk_light, DynamicLightManager,
 };
 use crate::game::world::persistence::WorldSaveManager;
 
@@ -62,6 +66,11 @@ pub struct ChunkManager {
     has_initialized_region: bool,
 
     pending_gpu_uploads: HashSet<IVec2>,
+    pending_light_gpu_uploads: HashSet<IVec2>,
+    pending_light_bounds: Option<(IVec2, IVec2)>,
+    padded_light_scratch: Vec<u8>,
+    tile_registry: TileRegistry,
+    pub dynamic_lights: DynamicLightManager,
 }
 
 impl ChunkManager {
@@ -94,6 +103,11 @@ impl ChunkManager {
             initial_expected_count: -1,
             has_initialized_region: false,
             pending_gpu_uploads: HashSet::new(),
+            pending_light_gpu_uploads: HashSet::new(),
+            pending_light_bounds: None,
+            padded_light_scratch: Vec::with_capacity(PADDED_CHUNK_LIGHT_BYTE_LEN),
+            tile_registry: TileRegistry::new_without_textures(),
+            dynamic_lights: DynamicLightManager::new(),
         }
     }
 
@@ -106,33 +120,127 @@ impl ChunkManager {
         self.world_name = world_name;
     }
 
-    /// Main frame tick: processes built chunks, removals, and flushes pending GPU uploads.
+    /// Main frame tick: processes built chunks, removals, static light baking, and GPU uploads.
     pub fn process(&mut self, renderer: &mut Renderer, signal_bus: &mut SignalBus) {
+        self.dynamic_lights.last_frame_static_rebakes = 0;
         self.process_build_queue(renderer, signal_bus);
         self.process_removal_queue(renderer);
+        self.flush_pending_static_lighting();
         self.flush_pending_gpu_uploads(renderer);
     }
 
-    pub fn flush_pending_gpu_uploads(&mut self, renderer: &mut Renderer) {
-        if self.pending_gpu_uploads.is_empty() {
-            return;
+    fn expand_pending_light_bounds(&mut self, min_tile: IVec2, max_tile: IVec2) {
+        match &mut self.pending_light_bounds {
+            Some((cur_min, cur_max)) => {
+                *cur_min = cur_min.min(min_tile);
+                *cur_max = cur_max.max(max_tile);
+            }
+            None => {
+                self.pending_light_bounds = Some((min_tile, max_tile));
+            }
         }
-        let positions: Vec<IVec2> = self.pending_gpu_uploads.drain().collect();
-        for chunk_pos in positions {
-            let Some(chunk) = self.chunks.get_mut(&chunk_pos) else {
-                continue;
-            };
-            if chunk.atlas_slot.is_none() {
-                if let Some(slot) = renderer.chunk_pass.allocate_slot() {
-                    chunk.build(slot);
+    }
+
+    /// Bakes any pending static light region queued by chunk loads or tile edits.
+    pub fn flush_pending_static_lighting(&mut self) {
+        let Some((write_min, write_max)) = self.pending_light_bounds.take() else {
+            return;
+        };
+        let dirty_light_chunks = bake_static_light_region(
+            &mut self.chunks,
+            self.terrain_generator.as_ref(),
+            &self.tile_registry,
+            write_min,
+            write_max,
+        );
+        self.dynamic_lights.last_frame_static_rebakes += dirty_light_chunks.len();
+        for cpos in dirty_light_chunks {
+            if self.chunks.contains_key(&cpos) {
+                self.pending_light_gpu_uploads.insert(cpos);
+            }
+        }
+    }
+
+    pub fn update_dynamic_lights(&mut self, player_pos: Vec2, cursor_world_pos: Vec2) {
+        self.dynamic_lights.update(
+            player_pos,
+            cursor_world_pos,
+            &self.chunks,
+            &self.tile_registry,
+        );
+    }
+
+    pub fn sample_entity_light_tint(&self, world_pos: Vec2) -> [f32; 4] {
+        self.dynamic_lights
+            .sample_world_light_tint(world_pos, &self.chunks)
+    }
+
+    pub fn get_light_at_world_pos(&self, world_pos: Vec2) -> [u8; 4] {
+        let chunk_pos = Self::world_to_chunk_pos(world_pos);
+        let Some(chunk) = self.get_chunk_at(chunk_pos) else {
+            return [0, 0, 0, 0];
+        };
+        let tile_pos = Self::world_to_tile_pos(world_pos);
+        chunk.get_light_at(tile_pos.x, tile_pos.y)
+    }
+
+    pub fn pending_light_upload_count(&self) -> usize {
+        self.pending_light_gpu_uploads.len()
+    }
+
+    pub fn clear_pending_light_uploads(&mut self) {
+        self.pending_light_gpu_uploads.clear();
+    }
+
+    pub fn flush_pending_gpu_uploads(&mut self, renderer: &mut Renderer) {
+        if !self.pending_gpu_uploads.is_empty() {
+            let positions: Vec<IVec2> = self.pending_gpu_uploads.drain().collect();
+            for chunk_pos in positions {
+                let Some(chunk) = self.chunks.get_mut(&chunk_pos) else {
+                    continue;
+                };
+                if chunk.atlas_slot.is_none() {
+                    if let Some(slot) = renderer.chunk_pass.allocate_slot() {
+                        chunk.build(slot);
+                    }
+                }
+                if let Some(slot) = chunk.atlas_slot {
+                    renderer
+                        .chunk_pass
+                        .write_chunk_data(&renderer.queue, slot, chunk.terrain_data());
                 }
             }
-            if let Some(slot) = chunk.atlas_slot {
-                renderer
-                    .chunk_pass
-                    .write_chunk_data(&renderer.queue, slot, chunk.terrain_data());
+        }
+
+        if !self.pending_light_gpu_uploads.is_empty() {
+            let light_positions: Vec<IVec2> = self.pending_light_gpu_uploads.drain().collect();
+            for chunk_pos in light_positions {
+                let Some(slot) = self.chunks.get(&chunk_pos).and_then(|c| c.atlas_slot) else {
+                    continue;
+                };
+                if build_padded_chunk_light(
+                    &self.chunks,
+                    chunk_pos,
+                    &mut self.padded_light_scratch,
+                ) {
+                    renderer.chunk_pass.write_chunk_light(
+                        &renderer.queue,
+                        slot,
+                        &self.padded_light_scratch,
+                    );
+                }
             }
         }
+
+        for (slot_idx, stamp_bytes) in self.dynamic_lights.drain_pending_uploads() {
+            renderer
+                .chunk_pass
+                .write_dynamic_light_slot(&renderer.queue, slot_idx, stamp_bytes);
+        }
+        renderer.chunk_pass.lighting_mode = self.dynamic_lights.lighting_mode as u32;
+        renderer
+            .chunk_pass
+            .set_dynamic_lights(self.dynamic_lights.gpu_lights());
     }
 
     fn process_build_queue(&mut self, renderer: &mut Renderer, signal_bus: &mut SignalBus) {
@@ -165,6 +273,11 @@ impl ChunkManager {
                 chunk.build(slot);
             }
             self.chunks.insert(chunk_pos, chunk);
+            let chunk_min = chunk_pos * CHUNK_SIZE;
+            let chunk_max = chunk_min + IVec2::splat(CHUNK_SIZE - 1);
+            let reach = IVec2::splat(MAX_STATIC_LIGHT_RADIUS);
+            self.expand_pending_light_bounds(chunk_min - reach, chunk_max + reach);
+            self.dynamic_lights.invalidate_tile_region(chunk_min, chunk_max);
             chunks_to_mark_done.push(chunk_pos);
             signal_bus.emit(GameSignal::ChunkLoaded(chunk_pos));
         }
@@ -235,6 +348,7 @@ impl ChunkManager {
                     self.save_dirty_chunk(chunk_pos, &chunk);
                 }
                 self.pending_gpu_uploads.remove(&chunk_pos);
+                self.pending_light_gpu_uploads.remove(&chunk_pos);
                 self.removal_queue.push_back(chunk);
                 signal_bus.emit(GameSignal::ChunkUnloaded(chunk_pos));
             }
@@ -275,6 +389,11 @@ impl ChunkManager {
                                 chunk.generate(saved_data, chunk_pos);
                                 self.chunks.insert(chunk_pos, chunk);
                                 self.pending_gpu_uploads.insert(chunk_pos);
+                                let chunk_min = chunk_pos * CHUNK_SIZE;
+                                let chunk_max = chunk_min + IVec2::splat(CHUNK_SIZE - 1);
+                                let reach = IVec2::splat(MAX_STATIC_LIGHT_RADIUS);
+                                self.expand_pending_light_bounds(chunk_min - reach, chunk_max + reach);
+                                self.dynamic_lights.invalidate_tile_region(chunk_min, chunk_max);
                                 signal_bus.emit(GameSignal::ChunkLoaded(chunk_pos));
                                 continue;
                             }
@@ -289,6 +408,7 @@ impl ChunkManager {
         self.chunk_loader
             .add_chunks_to_generation(&chunks_to_queue, self.player_chunk);
         self.last_sorted_player_chunk = self.player_chunk;
+        self.flush_pending_static_lighting();
     }
 
     fn resort_queues(&mut self) {
@@ -418,6 +538,10 @@ impl ChunkManager {
         }
 
         let mut old_tile_ids = vec![0u8; changes.len()];
+        let mut any_edited = false;
+        let mut edit_min = IVec2::splat(i32::MAX);
+        let mut edit_max = IVec2::splat(i32::MIN);
+        let mut sky_columns_changed: HashMap<i32, i32> = HashMap::new();
 
         for (chunk_pos, chunk_changes) in batched {
             if let Some(chunk) = self.chunks.get_mut(&chunk_pos) {
@@ -427,7 +551,29 @@ impl ChunkManager {
                     .collect();
                 let old_tiles = chunk.get_tiles(&tile_positions);
                 for (j, cc) in chunk_changes.iter().enumerate() {
-                    old_tile_ids[cc.idx] = old_tiles[j][0];
+                    let old_id = old_tiles[j][0];
+                    let new_id = cc.local.tile_id;
+                    old_tile_ids[cc.idx] = old_id;
+
+                    if old_id != new_id {
+                        let wx = chunk_pos.x * CHUNK_SIZE + cc.local.x;
+                        let wy = chunk_pos.y * CHUNK_SIZE + cc.local.y;
+                        let wtile = IVec2::new(wx, wy);
+                        edit_min = edit_min.min(wtile);
+                        edit_max = edit_max.max(wtile);
+                        any_edited = true;
+
+                        let sky_changed = self.tile_registry.blocks_skylight(old_id)
+                            != self.tile_registry.blocks_skylight(new_id)
+                            || old_id == GLASS
+                            || new_id == GLASS;
+                        if sky_changed {
+                            sky_columns_changed
+                                .entry(wx)
+                                .and_modify(|min_y| *min_y = (*min_y).min(wy))
+                                .or_insert(wy);
+                        }
+                    }
                 }
 
                 let locals: Vec<LocalTileChange> =
@@ -437,6 +583,34 @@ impl ChunkManager {
                     self.pending_gpu_uploads.insert(chunk_pos);
                 }
             }
+        }
+
+        if any_edited {
+            // If a tile's skylight-blocking state changed, extend edit_max.y down the vertical
+            // shaft in that column until the first opaque sky-blocking tile in loaded chunks.
+            for (wx, start_wy) in sky_columns_changed {
+                let cx = wx.div_euclid(CHUNK_SIZE);
+                let tx = wx.rem_euclid(CHUNK_SIZE);
+                let mut wy = start_wy + 1;
+                loop {
+                    let cy = wy.div_euclid(CHUNK_SIZE);
+                    let Some(chunk) = self.chunks.get(&IVec2::new(cx, cy)) else {
+                        break;
+                    };
+                    let ty = wy.rem_euclid(CHUNK_SIZE);
+                    let tid = chunk.get_tile_id_at(tx, ty);
+                    edit_max.y = edit_max.y.max(wy);
+                    if self.tile_registry.blocks_skylight(tid) {
+                        break;
+                    }
+                    wy += 1;
+                }
+            }
+
+            let reach = IVec2::splat(MAX_STATIC_LIGHT_RADIUS);
+            self.expand_pending_light_bounds(edit_min - reach, edit_max + reach);
+            self.dynamic_lights.invalidate_tile_region(edit_min, edit_max);
+            self.flush_pending_static_lighting();
         }
 
         for (i, change) in changes.iter().enumerate() {

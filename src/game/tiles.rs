@@ -11,6 +11,7 @@ pub const BRICK: u8 = 4;
 pub const MORTAR: u8 = 5;
 pub const PLANK: u8 = 6;
 pub const GLASS: u8 = 7;
+pub const LANTERN: u8 = 8;
 
 #[derive(Clone, Copy, Debug)]
 pub struct EdgeHardness {
@@ -39,6 +40,12 @@ pub struct TileProperties {
     pub hardness: i32,
     pub damage_stages: i32,
     pub break_noise: f32,
+    /// Static RGB light emitted by this tile (`0..=255` per channel).
+    pub light_emission: [u8; 3],
+    /// Cellular flood-fill light loss per cardinal tile step (`1..=255`).
+    /// Low values (e.g. `4` for Air, `6` for Glass) let light travel far;
+    /// higher values (e.g. `15..22` for solid terrain) bleed a few tiles into walls.
+    pub light_decay: u8,
 }
 
 impl Default for TileProperties {
@@ -50,6 +57,8 @@ impl Default for TileProperties {
             hardness: 1,
             damage_stages: 2,
             break_noise: 0.0,
+            light_emission: [0, 0, 0],
+            light_decay: 16,
         }
     }
 }
@@ -73,12 +82,27 @@ pub struct TileRegistry {
 }
 
 impl TileRegistry {
-    pub fn new_default() -> Self {
+    /// Creates the default tile registry with all gameplay and optical properties
+    /// without loading PNG textures from disk (useful for headless chunk/lighting tests).
+    pub fn new_without_textures() -> Self {
         let mut registry = Self {
             tiles: BTreeMap::new(),
             texture_size: 32,
             texture_layers_rgba: Vec::new(),
         };
+
+        registry.register_default_tiles();
+        registry
+    }
+
+    pub fn new_default() -> Self {
+        let mut registry = Self::new_without_textures();
+        registry.rebuild_texture_array();
+        registry
+    }
+
+    fn register_default_tiles(&mut self) {
+        let registry = self;
 
         registry.register_tile(
             AIR,
@@ -90,6 +114,7 @@ impl TileRegistry {
                 transparency: 0.0,
                 hardness: 0,
                 damage_stages: 0,
+                light_decay: 6,
                 ..TileProperties::default()
             },
         );
@@ -101,6 +126,7 @@ impl TileRegistry {
             [0.55, 0.35, 0.2, 1.0],
             TileProperties {
                 hardness: 3,
+                light_decay: 15,
                 ..TileProperties::default()
             },
         );
@@ -112,6 +138,7 @@ impl TileRegistry {
             [0.3, 0.7, 0.2, 1.0],
             TileProperties {
                 hardness: 2,
+                light_decay: 15,
                 ..TileProperties::default()
             },
         );
@@ -125,6 +152,7 @@ impl TileRegistry {
                 hardness: 8,
                 damage_stages: 2,
                 break_noise: 0.5,
+                light_decay: 20,
                 ..TileProperties::default()
             },
         );
@@ -138,6 +166,7 @@ impl TileRegistry {
                 hardness: 6,
                 damage_stages: 2,
                 break_noise: 0.25,
+                light_decay: 18,
                 ..TileProperties::default()
             },
         );
@@ -151,6 +180,7 @@ impl TileRegistry {
                 hardness: 3,
                 damage_stages: 2,
                 break_noise: 0.1,
+                light_decay: 15,
                 ..TileProperties::default()
             },
         );
@@ -164,6 +194,7 @@ impl TileRegistry {
                 hardness: 4,
                 damage_stages: 2,
                 break_noise: 0.2,
+                light_decay: 16,
                 ..TileProperties::default()
             },
         );
@@ -178,12 +209,26 @@ impl TileRegistry {
                 damage_stages: 1,
                 transparency: 0.8,
                 break_noise: 0.0,
+                light_decay: 8,
                 ..TileProperties::default()
             },
         );
-
-        registry.rebuild_texture_array();
-        registry
+        registry.register_tile(
+            LANTERN,
+            "Lantern",
+            true,
+            "assets/textures/lantern.png",
+            [1.0, 0.82, 0.38, 1.0],
+            TileProperties {
+                hardness: 2,
+                damage_stages: 1,
+                transparency: 0.9,
+                break_noise: 0.0,
+                light_emission: [255, 205, 115],
+                light_decay: 6,
+                ..TileProperties::default()
+            },
+        );
     }
 
     pub fn register_tile(
@@ -337,6 +382,28 @@ impl TileRegistry {
                         r = (r + delta).clamp(0.0, 1.0);
                         g = (g + delta).clamp(0.0, 1.0);
                         b = (b + delta).clamp(0.0, 1.0);
+                    }
+                    LANTERN => {
+                        // Warm glowing lantern core with wrought-iron frame border
+                        let cx = (x as f32 + 0.5) / tex_size as f32 - 0.5;
+                        let cy = (y as f32 + 0.5) / tex_size as f32 - 0.5;
+                        let dist = (cx * cx + cy * cy).sqrt() * 2.0;
+                        let is_frame = x == 0
+                            || y == 0
+                            || x == tex_size - 1
+                            || y == tex_size - 1
+                            || (x % 8 == 0 && (y < 3 || y >= tex_size - 3));
+                        if is_frame {
+                            r = 0.28 + (h - 0.5) * 0.05;
+                            g = 0.24 + (h - 0.5) * 0.05;
+                            b = 0.20 + (h - 0.5) * 0.05;
+                        } else {
+                            let core = (1.0 - dist * 0.55).clamp(0.35, 1.0);
+                            let shimmer = (h - 0.5) * 0.08;
+                            r = (0.95 * core + 0.12 + shimmer).clamp(0.0, 1.0);
+                            g = (0.78 * core + 0.06 + shimmer * 0.8).clamp(0.0, 1.0);
+                            b = (0.38 * core + shimmer * 0.5).clamp(0.0, 1.0);
+                        }
                     }
                     _ => {
                         let grain = (h - 0.5) * 0.12;
@@ -493,6 +560,29 @@ impl TileRegistry {
             .get(&tile_id)
             .map(|t| t.properties.break_noise)
             .unwrap_or(0.0)
+    }
+
+    pub fn get_light_emission(&self, tile_id: u8) -> [u8; 3] {
+        self.tiles
+            .get(&tile_id)
+            .map(|t| t.properties.light_emission)
+            .unwrap_or([0, 0, 0])
+    }
+
+    pub fn get_light_decay(&self, tile_id: u8) -> u8 {
+        self.tiles
+            .get(&tile_id)
+            .map(|t| t.properties.light_decay.max(1))
+            .unwrap_or(16)
+    }
+
+    /// Returns whether this tile blocks direct vertical skylight shafts.
+    /// `AIR`, `GLASS`, and `LANTERN` allow vertical sunlight through; opaque solids stop the vertical beam.
+    pub fn blocks_skylight(&self, tile_id: u8) -> bool {
+        match self.tiles.get(&tile_id) {
+            Some(t) => t.solid && t.properties.light_decay >= 10 && t.properties.light_emission == [0, 0, 0],
+            None => false,
+        }
     }
 
     pub fn get_effective_hardness(&self, tile_id: u8, damage_stage: u8) -> f32 {

@@ -1,5 +1,5 @@
 use glam::{IVec2, Vec2};
-use crate::game::settings::{CHUNK_BYTE_LEN, CHUNK_SIZE};
+use crate::game::settings::{CHUNK_BYTE_LEN, CHUNK_LIGHT_BYTE_LEN, CHUNK_SIZE};
 
 #[derive(Clone, Copy, Debug)]
 pub struct LocalTileChange {
@@ -10,14 +10,17 @@ pub struct LocalTileChange {
 }
 
 /// Individual terrain chunk ported from `src/world/chunks/chunk.gd`.
-/// Stores terrain as a 2048-byte buffer (`[tile_id, damage_stage]` per tile)
-/// and holds a slot index in the GPU chunk data atlas.
+/// Stores terrain as a 2048-byte buffer (`[tile_id, damage_stage]` per tile),
+/// baked static lighting as a 4096-byte buffer (`[r, g, b, sky]` per tile),
+/// and holds a slot index in the GPU chunk data & light atlases.
 pub struct Chunk {
     pub chunk_pos: IVec2,
     pub position: Vec2,
     pub visible: bool,
     pub atlas_slot: Option<u32>,
     terrain_data: Vec<u8>,
+    static_light: Vec<u8>,
+    pub light_baked: bool,
 }
 
 impl Default for Chunk {
@@ -34,6 +37,8 @@ impl Chunk {
             visible: false,
             atlas_slot: None,
             terrain_data: Vec::new(),
+            static_light: Vec::new(),
+            light_baked: false,
         }
     }
 
@@ -44,6 +49,9 @@ impl Chunk {
             (chunk_pos.x * CHUNK_SIZE) as f32,
             (chunk_pos.y * CHUNK_SIZE) as f32,
         );
+        self.static_light.resize(CHUNK_LIGHT_BYTE_LEN, 0);
+        self.static_light.fill(0);
+        self.light_baked = false;
     }
 
     pub fn build(&mut self, atlas_slot: u32) {
@@ -54,11 +62,40 @@ impl Chunk {
     pub fn reset(&mut self) -> Option<u32> {
         self.visible = false;
         self.terrain_data.clear();
+        self.static_light.clear();
+        self.light_baked = false;
         self.atlas_slot.take()
     }
 
     pub fn terrain_data(&self) -> &[u8] {
         &self.terrain_data
+    }
+
+    pub fn static_light(&self) -> &[u8] {
+        &self.static_light
+    }
+
+    pub fn static_light_mut(&mut self) -> &mut [u8] {
+        if self.static_light.len() < CHUNK_LIGHT_BYTE_LEN {
+            self.static_light.resize(CHUNK_LIGHT_BYTE_LEN, 0);
+        }
+        &mut self.static_light
+    }
+
+    pub fn get_light_at(&self, tile_x: i32, tile_y: i32) -> [u8; 4] {
+        if tile_x < 0 || tile_x >= CHUNK_SIZE || tile_y < 0 || tile_y >= CHUNK_SIZE {
+            return [0, 0, 0, 0];
+        }
+        let index = ((tile_y * CHUNK_SIZE + tile_x) * 4) as usize;
+        if index + 3 >= self.static_light.len() {
+            return [0, 0, 0, 0];
+        }
+        [
+            self.static_light[index],
+            self.static_light[index + 1],
+            self.static_light[index + 2],
+            self.static_light[index + 3],
+        ]
     }
 
     pub fn get_terrain_data_copy(&self) -> Vec<u8> {

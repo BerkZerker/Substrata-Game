@@ -2,6 +2,16 @@
 pub const CHUNK_SIZE: i32 = 32;
 pub const CHUNK_SIZE_U32: u32 = 32;
 pub const CHUNK_BYTE_LEN: usize = (CHUNK_SIZE as usize) * (CHUNK_SIZE as usize) * 2;
+pub const CHUNK_LIGHT_BYTE_LEN: usize = (CHUNK_SIZE as usize) * (CHUNK_SIZE as usize) * 4;
+pub const PADDED_CHUNK_LIGHT_SIZE: u32 = CHUNK_SIZE_U32 + 2;
+pub const PADDED_CHUNK_LIGHT_BYTE_LEN: usize =
+    (PADDED_CHUNK_LIGHT_SIZE as usize) * (PADDED_CHUNK_LIGHT_SIZE as usize) * 4;
+
+// Lighting
+pub const MAX_STATIC_LIGHT_RADIUS: i32 = 44;
+pub const DYN_LIGHT_STAMP_SIZE: i32 = 128;
+pub const DYN_LIGHT_STAMP_SIZE_U32: u32 = 128;
+pub const MAX_DYNAMIC_LIGHTS: usize = 8;
 
 pub const REGION_SIZE: i32 = 4;
 pub const LOD_RADIUS: i32 = 4;

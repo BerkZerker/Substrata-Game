@@ -9,6 +9,11 @@ use crate::game::tiles::{AIR, DIRT, GRASS, STONE};
 pub trait BaseTerrainGenerator: Send + Sync {
     fn generate_chunk(&self, chunk_pos: IVec2) -> Vec<u8>;
     fn get_generator_name(&self) -> &'static str;
+    /// Returns the natural terrain surface Y coordinate (in world tiles, +Y down) at `world_x`.
+    /// Used by the static lighting baker to determine open-sky columns without requiring high-altitude chunks.
+    fn get_surface_height(&self, _world_x: i32) -> i32 {
+        0
+    }
 }
 
 /// Configuration for `SimplexTerrainGenerator` matching `DEFAULT_CONFIG` in
@@ -126,6 +131,10 @@ impl SimplexTerrainGenerator {
 impl BaseTerrainGenerator for SimplexTerrainGenerator {
     fn get_generator_name(&self) -> &'static str {
         "simplex"
+    }
+
+    fn get_surface_height(&self, world_x: i32) -> i32 {
+        self.get_surface_y(world_x as f32).floor() as i32
     }
 
     fn generate_chunk(&self, chunk_pos: IVec2) -> Vec<u8> {

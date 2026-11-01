@@ -3,7 +3,9 @@ use substrata::game::physics::collision::CollisionDetector;
 use substrata::game::physics::movement::MovementController;
 use substrata::game::settings::{CHUNK_BYTE_LEN, CHUNK_SIZE};
 use substrata::game::signals::SignalBus;
-use substrata::game::tiles::{TileRegistry, AIR, BRICK, DIRT, GLASS, GRASS, MORTAR, PLANK, STONE};
+use substrata::game::tiles::{
+    TileRegistry, AIR, BRICK, DIRT, GLASS, GRASS, LANTERN, MORTAR, PLANK, STONE,
+};
 use substrata::game::world::building::{
     apply_placement, free_anchor_for_tile, plan_placement, remove_piece_at, sin_cos, BuildTool,
     Overlap, PatternRegistry, PlacePose, PlaceRefusal, Placements, SlotKind, Yaw2D, TRIG_ONE,
@@ -12,6 +14,7 @@ use substrata::game::world::chunk_manager::{ChunkManager, WorldTileChange};
 use substrata::game::world::generator::{
     BaseTerrainGenerator, SimplexConfig, SimplexTerrainGenerator,
 };
+use substrata::game::world::lighting::LightingMode;
 use substrata::game::world::persistence::WorldSaveManager;
 use substrata::game::world::terrain_editor::TerrainEditor;
 
@@ -359,6 +362,7 @@ fn test_ensure_building_material_textures_and_registry() {
         (MORTAR, "assets/textures/mortar.png", [0.76, 0.74, 0.68, 1.0]),
         (PLANK, "assets/textures/plank.png", [0.58, 0.40, 0.22, 1.0]),
         (GLASS, "assets/textures/glass.png", [0.65, 0.88, 0.95, 0.85]),
+        (LANTERN, "assets/textures/lantern.png", [1.0, 0.82, 0.38, 1.0]),
     ];
     for (id, path_str, color) in assets {
         let p = Path::new(path_str);
@@ -379,6 +383,9 @@ fn test_ensure_building_material_textures_and_registry() {
     assert_eq!(registry.find_tile_by_name("mortar"), Some(MORTAR));
     assert_eq!(registry.find_tile_by_name("plank"), Some(PLANK));
     assert_eq!(registry.find_tile_by_name("glass"), Some(GLASS));
+    assert_eq!(registry.find_tile_by_name("lantern"), Some(LANTERN));
+    assert_eq!(registry.get_light_emission(LANTERN), [255, 205, 115]);
+    assert_eq!(registry.get_light_emission(STONE), [0, 0, 0]);
     // Brick must be harder than mortar so Dijkstra flood-fill follows mortar joints first
     assert!(registry.get_hardness(BRICK) > registry.get_hardness(MORTAR));
 }
@@ -582,4 +589,143 @@ fn test_brick_building_families_custom_materials_and_piece_removal() {
 
     save_mgr.delete_world(&temp_world);
 }
+
+#[test]
+fn test_static_baked_lighting_vs_dynamic_lighting_and_modes() {
+    let mut signals = SignalBus::new();
+    let mut chunk_manager = ChunkManager::new(2026);
+
+    let temp_world = format!("test_lighting_{}", std::process::id());
+    let save_mgr = WorldSaveManager::new();
+
+    // Create chunk (0, 0) as open sky above a solid stone underground half (y >= 16 is STONE)
+    let mut chunk_0_0 = vec![0u8; CHUNK_BYTE_LEN];
+    for y in 16..32 {
+        for x in 0..32 {
+            let idx = ((y * 32 + x) * 2) as usize;
+            chunk_0_0[idx] = STONE;
+            chunk_0_0[idx + 1] = 0;
+        }
+    }
+    // Create chunk (0, 1) (y = 32..64) as solid deep underground STONE
+    let mut chunk_0_1 = vec![0u8; CHUNK_BYTE_LEN];
+    for i in (0..chunk_0_1.len()).step_by(2) {
+        chunk_0_1[i] = STONE;
+    }
+
+    save_mgr.save_chunk(&temp_world, IVec2::new(0, 0), &chunk_0_0);
+    save_mgr.save_chunk(&temp_world, IVec2::new(0, 1), &chunk_0_1);
+    chunk_manager.setup_persistence(save_mgr.clone(), temp_world.clone());
+    chunk_manager.on_player_chunk_changed(IVec2::new(0, 0), &mut signals);
+
+    // 1. Open air above the stone floor (y = 8) should have full natural skylight (255)
+    let sky_above = chunk_manager.get_light_at_world_pos(Vec2::new(16.0, 8.0));
+    assert_eq!(sky_above[3], 255, "Open air above ground must have full skylight");
+
+    // 2. Skylight should bleed a few tiles into the stone surface (y = 16, 17) and fade to 0 deep underground (y = 48)
+    let surface_stone_light = chunk_manager.get_light_at_world_pos(Vec2::new(16.0, 16.0));
+    assert!(
+        surface_stone_light[3] > 180,
+        "Top surface stone tile should receive bled skylight, got {}",
+        surface_stone_light[3]
+    );
+    let deep_stone_light = chunk_manager.get_light_at_world_pos(Vec2::new(16.0, 48.0));
+    assert_eq!(
+        deep_stone_light,
+        [0, 0, 0, 0],
+        "Deep underground stone must be completely dark"
+    );
+
+    // 3. Dig a small underground cave at (16, 48) and place a static LANTERN at (16, 48)
+    chunk_manager.clear_pending_light_uploads();
+    let lantern_edit = [
+        WorldTileChange {
+            pos: Vec2::new(15.0, 48.0),
+            tile_id: AIR,
+            damage_stage: 0,
+        },
+        WorldTileChange {
+            pos: Vec2::new(16.0, 48.0),
+            tile_id: LANTERN,
+            damage_stage: 0,
+        },
+        WorldTileChange {
+            pos: Vec2::new(17.0, 48.0),
+            tile_id: AIR,
+            damage_stage: 0,
+        },
+    ];
+    chunk_manager.set_tiles_at_world_positions(&lantern_edit, &mut signals);
+
+    // Placing the lantern should mark only the affected chunk(s) for static light GPU upload
+    assert!(chunk_manager.pending_light_upload_count() >= 1);
+    let lantern_light = chunk_manager.get_light_at_world_pos(Vec2::new(16.0, 48.0));
+    assert_eq!(lantern_light[0], 255);
+    assert_eq!(lantern_light[1], 205);
+    assert_eq!(lantern_light[2], 115);
+
+    // Adjacent cave air (17, 48) and nearby cave wall (18, 48) should receive baked warm light
+    let adj_air_light = chunk_manager.get_light_at_world_pos(Vec2::new(17.0, 48.0));
+    let adj_wall_light = chunk_manager.get_light_at_world_pos(Vec2::new(18.0, 48.0));
+    assert!(adj_air_light[0] > 230);
+    assert!(adj_wall_light[0] > 180);
+
+    // 4. Remove the static LANTERN (set to AIR): static light must be completely removed (zero ghost light!)
+    let remove_lantern = [WorldTileChange {
+        pos: Vec2::new(16.0, 48.0),
+        tile_id: AIR,
+        damage_stage: 0,
+    }];
+    chunk_manager.set_tiles_at_world_positions(&remove_lantern, &mut signals);
+    assert_eq!(
+        chunk_manager.get_light_at_world_pos(Vec2::new(16.0, 48.0)),
+        [0, 0, 0, 0],
+        "Removed static lantern must leave zero ghost light"
+    );
+
+    // 5. Verify Dynamic Lights: updating dynamic lights never triggers static light rebakes,
+    // and stationary dynamic lights do 0 dynamic rebakes on subsequent frames!
+    chunk_manager.clear_pending_light_uploads();
+    chunk_manager.update_dynamic_lights(Vec2::new(16.0, 48.0), Vec2::new(10.0, 8.0));
+    assert_eq!(
+        chunk_manager.pending_light_upload_count(),
+        0,
+        "Moving dynamic lights must never dirty static chunk light slots"
+    );
+    assert_eq!(
+        chunk_manager.dynamic_lights.last_frame_dynamic_rebakes,
+        2,
+        "First frame with player + cursor dynamic lights should bake 2 stamps"
+    );
+
+    // Calling update_dynamic_lights again with the same positions should do 0 rebakes!
+    chunk_manager.update_dynamic_lights(Vec2::new(16.0, 48.0), Vec2::new(10.0, 8.0));
+    assert_eq!(
+        chunk_manager.dynamic_lights.last_frame_dynamic_rebakes,
+        0,
+        "Stationary dynamic lights must be cached and do 0 rebakes"
+    );
+
+    // Moving only the cursor light should rebake only 1 stamp (the cursor stamp), leaving player stamp cached!
+    chunk_manager.update_dynamic_lights(Vec2::new(16.0, 48.0), Vec2::new(14.0, 8.0));
+    assert_eq!(
+        chunk_manager.dynamic_lights.last_frame_dynamic_rebakes,
+        1,
+        "Moving only the cursor light must rebake only 1 dynamic stamp"
+    );
+
+    // 6. Test LightingMode cycle (Smooth -> PixelArt -> Blocky -> Off -> Smooth)
+    let mut mode = LightingMode::Smooth;
+    mode = mode.next();
+    assert_eq!(mode, LightingMode::PixelArt);
+    mode = mode.next();
+    assert_eq!(mode, LightingMode::Blocky);
+    mode = mode.next();
+    assert_eq!(mode, LightingMode::Off);
+    mode = mode.next();
+    assert_eq!(mode, LightingMode::Smooth);
+
+    save_mgr.delete_world(&temp_world);
+}
+
 

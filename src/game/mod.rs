@@ -9,6 +9,7 @@ pub mod world;
 
 use glam::Vec2;
 use rand::Rng;
+use winit::keyboard::KeyCode;
 
 use crate::engine::app::GameCallbacks;
 use crate::engine::camera::Camera2D;
@@ -119,6 +120,21 @@ impl GameCallbacks for SubstrataGame {
         self.camera_controller
             .update(dt, self.player.position, &mut self.camera);
 
+        // Lighting controls: L cycles Smooth / Pixel-Art / Blocky / Off,
+        // F toggles player lantern, C toggles cursor light
+        if input.key_just_pressed(KeyCode::KeyL) {
+            self.chunk_manager.dynamic_lights.lighting_mode =
+                self.chunk_manager.dynamic_lights.lighting_mode.next();
+        }
+        if input.key_just_pressed(KeyCode::KeyF) {
+            self.chunk_manager.dynamic_lights.player_light_enabled =
+                !self.chunk_manager.dynamic_lights.player_light_enabled;
+        }
+        if input.key_just_pressed(KeyCode::KeyC) {
+            self.chunk_manager.dynamic_lights.cursor_light_enabled =
+                !self.chunk_manager.dynamic_lights.cursor_light_enabled;
+        }
+
         // GUI updates first so hotbar clicks set `input.ui_consumed_mouse = true`
         self.gui.update_and_build(
             dt,
@@ -152,8 +168,12 @@ impl GameCallbacks for SubstrataGame {
 
         renderer.chunk_pass.debug_terrain = self.terrain_edit_controller.debug_terrain;
 
-        // Process chunk build/removal queues and upload any modified chunks to the GPU atlas
+        // Process chunk build/removal queues, static light baking, dynamic light stamps, and GPU uploads
+        let cursor_world = self.camera.screen_to_world(input.mouse_pos);
         self.chunk_manager.process(renderer, &mut self.signal_bus);
+        self.chunk_manager
+            .update_dynamic_lights(self.player.position, cursor_world);
+        self.chunk_manager.flush_pending_gpu_uploads(renderer);
         self.dispatch_signals();
     }
 
@@ -165,11 +185,15 @@ impl GameCallbacks for SubstrataGame {
             &mut self.chunk_instances,
         );
 
+        let player_tint = self
+            .chunk_manager
+            .sample_entity_light_tint(self.player.position);
+
         self.sprite_instances.clear();
         self.sprite_instances.push(SpriteInstance {
             center_pos: self.player.position.to_array(),
             size: renderer.sprite_pass.player_size.to_array(),
-            tint: [1.0, 1.0, 1.0, 1.0],
+            tint: player_tint,
         });
 
         let view_proj = self.camera.view_proj_matrix();
