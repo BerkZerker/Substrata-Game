@@ -1,13 +1,11 @@
-.godot/
 .vscode/
-godot
-*.import
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 
 # World save data
-data/*
-!data/.gdignore
-!data/.gitkeep
+/data/
+
+# Rust build artifacts
+/target/
