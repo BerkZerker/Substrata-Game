@@ -11,6 +11,7 @@ use crate::game::entities::player::Player;
 use crate::game::settings::{CHUNK_SIZE, REGION_SIZE};
 use crate::game::signals::SignalBus;
 use crate::game::tiles::{TileRegistry, AIR};
+use crate::game::world::building::fixed_to_world;
 use crate::game::world::chunk_manager::{ChunkDebugInfo, ChunkManager};
 use crate::game::world::terrain_editor::TerrainEditController;
 
@@ -26,12 +27,23 @@ Movement
   Scroll .......... Zoom
   Z ............... Cycle Zoom Presets
 
-Editing
+Terrain Brush Mode (Default)
+  B ............... Toggle Build Mode
   LMB Hold ........ Destroy Terrain (force)
   RMB Hold ........ Place Terrain (circle)
   1-9 ............. Select Material
   Q / E ........... Brush Value -/+
   T ............... Terrain Heatmap
+
+Brick Build Mode (Press B)
+  RMB Drag ........ Size & Place Pattern
+  LMB Click ....... Remove Single Piece / Dig
+  Q / E or [ / ] .. Prev / Next Pattern
+  X or Tab ........ Switch Slot (Piece / Mortar)
+  1-9 / 0 ......... Set Slot Material / Reset
+  G ............... Toggle Snap to Adjacent
+  V or O .......... Cycle Overlap Mode
+  R / , / . ....... Rotate 90 / -15 / +15 deg
 
 Debug & UI
   F1 .............. This Help
@@ -120,9 +132,26 @@ impl GuiSystem {
             }
         }
 
-        Self::draw_brush_preview(input, camera, edit_controller, debug_batch);
+        if edit_controller.build_tool.active {
+            let mouse_world = camera.screen_to_world(input.mouse_pos);
+            let cursor_tile =
+                IVec2::new(mouse_world.x.floor() as i32, mouse_world.y.floor() as i32);
+            let movers = [(player.position, player.movement.collision_box_size)];
+            edit_controller.build_tool.update_preview(
+                cursor_tile,
+                mouse_world,
+                &edit_controller.patterns,
+                &edit_controller.placements,
+                chunk_manager,
+                tile_registry,
+                &movers,
+            );
+            Self::draw_build_preview(camera, edit_controller, debug_batch);
+        } else {
+            Self::draw_brush_preview(input, camera, edit_controller, debug_batch);
+        }
 
-        // 2. Screen-space UI (Hotbar, DebugHUD, CursorInfo, ControlsOverlay)
+        // 2. Screen-space UI (Hotbar, BuildPanel, DebugHUD, CursorInfo, ControlsOverlay)
         self.build_hotbar(
             input,
             camera.viewport_size,
@@ -132,12 +161,30 @@ impl GuiSystem {
             ui_batch,
         );
 
+        if edit_controller.build_tool.active {
+            self.build_building_panel(
+                input,
+                camera.viewport_size,
+                tile_registry,
+                edit_controller,
+                ui_batch,
+            );
+        }
+
         if self.show_debug_hud {
             self.build_debug_hud(fps, camera, player, chunk_manager, ui_batch);
         }
 
         if self.show_cursor_info {
-            self.build_cursor_info(dt, input, camera, chunk_manager, tile_registry, ui_batch);
+            self.build_cursor_info(
+                dt,
+                input,
+                camera,
+                chunk_manager,
+                tile_registry,
+                edit_controller,
+                ui_batch,
+            );
         }
 
         if self.show_controls_help {
@@ -167,10 +214,28 @@ impl GuiSystem {
 
         let slots_row_width =
             (slot_count as f32) * slot_size.x + ((slot_count.saturating_sub(1)) as f32) * separation;
-        let value_text = format!(
-            "Brush: {}",
-            edit_controller.get_current_brush_value().round() as i32
-        );
+        let value_text = if edit_controller.build_tool.active {
+            let pat_name = edit_controller
+                .patterns
+                .get(edit_controller.build_tool.pattern)
+                .map(|p| p.name())
+                .unwrap_or("?");
+            format!(
+                "BUILD [B] : {}  |  {} (V)  |  Snap:{} (G)",
+                pat_name,
+                edit_controller.build_tool.overlap.name(),
+                if edit_controller.build_tool.snap {
+                    "ON"
+                } else {
+                    "OFF"
+                }
+            )
+        } else {
+            format!(
+                "BRUSH [B] : {}  (Q/E)",
+                edit_controller.get_current_brush_value().round() as i32
+            )
+        };
         let value_size = UiBatch::measure_text(&value_text, font_size);
 
         let content_width = slots_row_width.max(value_size.x).max(100.0);
@@ -238,12 +303,110 @@ impl GuiSystem {
             ui_batch.draw_text_shadowed(key_pos, &key_str, 9.0, [1.0, 1.0, 1.0, 0.95]);
         }
 
-        // Centered "Brush: 10" label below slots row
+        // Centered status label below slots row (clickable to toggle Build Mode)
         let label_pos = Vec2::new(
             panel_pos.x + (panel_size.x - value_size.x) * 0.5,
             row_y + slot_size.y + separation,
         );
-        ui_batch.draw_text_shadowed(label_pos, &value_text, font_size, [1.0, 1.0, 1.0, 0.9]);
+        let label_hovered = mouse.x >= label_pos.x - 4.0
+            && mouse.x <= label_pos.x + value_size.x + 4.0
+            && mouse.y >= label_pos.y - 2.0
+            && mouse.y <= label_pos.y + value_size.y + 2.0;
+        if label_hovered && input.mouse_just_pressed(MouseButton::Left) {
+            edit_controller.build_tool.active = !edit_controller.build_tool.active;
+            edit_controller.build_tool.cancel_drag();
+        }
+        let label_color = if edit_controller.build_tool.active {
+            [0.45, 0.95, 0.55, 0.98]
+        } else {
+            [1.0, 1.0, 1.0, 0.9]
+        };
+        ui_batch.draw_text_shadowed(label_pos, &value_text, font_size, label_color);
+    }
+
+    fn build_building_panel(
+        &self,
+        input: &mut InputState,
+        viewport_size: Vec2,
+        tile_registry: &TileRegistry,
+        edit_controller: &mut TerrainEditController,
+        ui_batch: &mut UiBatch,
+    ) {
+        let Some(pattern) = edit_controller
+            .patterns
+            .get(edit_controller.build_tool.pattern)
+            .cloned()
+        else {
+            return;
+        };
+
+        let effective_mats = edit_controller
+            .build_tool
+            .effective_materials(&edit_controller.patterns);
+        let slot_names = pattern.slot_names();
+        let active_slot = edit_controller.build_tool.active_slot;
+
+        let mut slots_desc = String::new();
+        for (idx, &slot_label) in slot_names.iter().enumerate() {
+            let mat_name = tile_registry.get_tile_name(effective_mats[idx]);
+            let marker = if idx == active_slot { ">" } else { " " };
+            slots_desc.push_str(&format!(
+                "{}Slot {} ({}): {} [1-9]\n",
+                marker,
+                idx + 1,
+                slot_label,
+                mat_name
+            ));
+        }
+
+        let text = format!(
+            "=== Brick Builder (B) ===\nPattern (Q/E): {} ({})\n{}Reset Slots: [0]  Switch Slot: [X]\nOverlap (V): {}\nSnap (G): {}\nYaw (R/,/.): {:.0} deg",
+            pattern.name(),
+            pattern.family_name(),
+            slots_desc,
+            edit_controller.build_tool.overlap.name(),
+            if edit_controller.build_tool.snap {
+                "ON"
+            } else {
+                "OFF"
+            },
+            edit_controller.build_tool.yaw_degrees(),
+        );
+
+        let font_size = 10.0;
+        let margin = 10.0;
+        let text_size = UiBatch::measure_text(&text, font_size);
+        let panel_size = text_size + Vec2::splat(margin * 2.0);
+        let panel_pos = Vec2::new(viewport_size.x - panel_size.x - 12.0, 12.0);
+
+        let mouse = input.mouse_pos;
+        if mouse.x >= panel_pos.x
+            && mouse.x <= panel_pos.x + panel_size.x
+            && mouse.y >= panel_pos.y
+            && mouse.y <= panel_pos.y + panel_size.y
+        {
+            input.ui_consumed_mouse = true;
+            if input.mouse_just_pressed(MouseButton::Left) {
+                let rel_y = mouse.y - (panel_pos.y + margin);
+                let line_h = font_size * 1.35;
+                let line_idx = (rel_y / line_h).floor() as i32;
+                if line_idx == 1 {
+                    edit_controller
+                        .build_tool
+                        .cycle_pattern(1, &edit_controller.patterns);
+                } else if line_idx >= 2 && (line_idx as usize) < 2 + slot_names.len() {
+                    edit_controller.build_tool.active_slot = (line_idx - 2) as usize;
+                }
+            }
+        }
+
+        ui_batch.draw_panel(panel_pos, panel_size);
+        ui_batch.draw_text_shadowed(
+            panel_pos + Vec2::splat(margin),
+            &text,
+            font_size,
+            [0.92, 0.96, 1.0, 0.95],
+        );
     }
 
     fn build_debug_hud(
@@ -302,11 +465,13 @@ impl GuiSystem {
         camera: &Camera2D,
         chunk_manager: &ChunkManager,
         tile_registry: &TileRegistry,
+        edit_controller: &TerrainEditController,
         ui_batch: &mut UiBatch,
     ) {
         self.cursor_time_since_update += dt;
         if self.cursor_time_since_update >= CURSOR_UPDATE_INTERVAL
             || self.cursor_cached_text.is_empty()
+            || edit_controller.build_tool.active
         {
             self.cursor_time_since_update = 0.0;
             let world_pos = camera.screen_to_world(input.mouse_pos);
@@ -314,13 +479,13 @@ impl GuiSystem {
             let [tile_id, damage_stage] = chunk_manager.get_tile_at_world_pos(world_pos);
             let tile_name = tile_registry.get_tile_name(tile_id);
 
-            if tile_id == AIR {
-                self.cursor_cached_text = format!("({}, {}) {}", tile_pos.x, tile_pos.y, tile_name);
+            let mut base_line = if tile_id == AIR {
+                format!("({}, {}) {}", tile_pos.x, tile_pos.y, tile_name)
             } else {
                 let hardness = tile_registry.get_hardness(tile_id);
                 let eff_hardness = tile_registry.get_effective_hardness(tile_id, damage_stage);
                 let max_stages = tile_registry.get_damage_stages(tile_id);
-                self.cursor_cached_text = format!(
+                format!(
                     "({}, {}) {}  H:{}  Eff:{:.1}  Dmg:{}/{}",
                     tile_pos.x,
                     tile_pos.y,
@@ -329,8 +494,23 @@ impl GuiSystem {
                     eff_hardness,
                     damage_stage,
                     max_stages
-                );
+                )
+            };
+
+            if let Some((serial, piece_id)) = edit_controller.placements.piece_at(tile_pos) {
+                base_line.push_str(&format!("  [Piece #{} Rec #{}]", piece_id, serial));
+            } else if let Some(serial) = edit_controller.placements.placement_at(tile_pos) {
+                base_line.push_str(&format!("  [Joint Rec #{}]", serial));
             }
+
+            if edit_controller.build_tool.active {
+                if let Some(plan) = &edit_controller.build_tool.plan {
+                    base_line.push('\n');
+                    base_line.push_str(&plan.status_text);
+                }
+            }
+
+            self.cursor_cached_text = base_line;
         }
 
         let font_size = 10.0;
@@ -381,6 +561,67 @@ impl GuiSystem {
             line_thickness,
             48,
             [1.0, 1.0, 1.0, 0.5],
+        );
+    }
+
+    fn draw_build_preview(
+        camera: &Camera2D,
+        edit_controller: &TerrainEditController,
+        debug_batch: &mut DebugBatch,
+    ) {
+        let Some(plan) = &edit_controller.build_tool.plan else {
+            return;
+        };
+        let line_thickness = (1.5 / camera.zoom.x).max(0.15);
+        let accepted = plan.result.is_ok();
+        let piece_color = if accepted {
+            [0.25, 0.95, 0.40, 0.85]
+        } else {
+            [0.95, 0.25, 0.20, 0.85]
+        };
+        let bounds_color = if accepted {
+            [0.85, 0.95, 1.0, 0.45]
+        } else {
+            [1.0, 0.5, 0.4, 0.45]
+        };
+
+        let pose = plan.cmd.pose();
+
+        // Draw outer bounds of the placement
+        if let Some(pattern) = edit_controller.patterns.get(plan.cmd.pattern) {
+            let bounds = pattern.bounds(&plan.cmd);
+            let corners = bounds.world_corners(pose);
+            for i in 0..4 {
+                debug_batch.draw_line(
+                    corners[i],
+                    corners[(i + 1) % 4],
+                    line_thickness,
+                    bounds_color,
+                );
+            }
+        }
+
+        // Draw individual piece outlines (ported from `build_overlay.rs`)
+        for &(_, pbox) in &plan.boxes {
+            let corners = pbox.world_corners(pose);
+            for i in 0..4 {
+                debug_batch.draw_line(
+                    corners[i],
+                    corners[(i + 1) % 4],
+                    line_thickness,
+                    piece_color,
+                );
+            }
+        }
+
+        // Draw anchor marker
+        let anchor_world = fixed_to_world(pose.anchor);
+        debug_batch.draw_circle_outline(
+            anchor_world,
+            0.35,
+            line_thickness,
+            12,
+            [0.3, 0.85, 1.0, 0.9],
         );
     }
 

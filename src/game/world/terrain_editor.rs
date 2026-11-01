@@ -12,6 +12,9 @@ use crate::game::settings::{
 };
 use crate::game::signals::{GameSignal, SignalBus};
 use crate::game::tiles::{TileRegistry, AIR, STONE};
+use crate::game::world::building::{
+    remove_piece_at, BuildTool, PatternRegistry, Placements,
+};
 use crate::game::world::chunk_manager::{ChunkManager, WorldTileChange};
 
 /// 8-connected neighbor offsets (cardinal + diagonal) matching `TerrainEditor.NEIGHBORS`.
@@ -341,6 +344,9 @@ pub struct TerrainEditController {
     is_destroying: bool,
     last_edit_tile_pos: Option<IVec2>,
     pub debug_terrain: bool,
+    pub patterns: PatternRegistry,
+    pub placements: Placements,
+    pub build_tool: BuildTool,
 }
 
 impl Default for TerrainEditController {
@@ -359,11 +365,17 @@ impl TerrainEditController {
             is_destroying: false,
             last_edit_tile_pos: None,
             debug_terrain: false,
+            patterns: PatternRegistry::with_defaults(),
+            placements: Placements::new(),
+            build_tool: BuildTool::new(),
         }
     }
 
     pub fn set_material(&mut self, tile_id: u8, signal_bus: &mut SignalBus) {
         self.current_material = tile_id;
+        if self.build_tool.active && tile_id != AIR {
+            self.build_tool.set_slot_material(tile_id);
+        }
         signal_bus.emit(GameSignal::MaterialSelected(tile_id));
     }
 
@@ -387,38 +399,98 @@ impl TerrainEditController {
         tile_registry: &TileRegistry,
         signal_bus: &mut SignalBus,
     ) {
-        // Respect UI click consumption (e.g. clicking a hotbar slot)
-        if !input.ui_consumed_mouse {
-            if input.mouse_just_pressed(MouseButton::Left) {
-                self.is_destroying = true;
-                self.last_edit_tile_pos = None;
+        if input.key_just_pressed(KeyCode::KeyB) {
+            self.build_tool.active = !self.build_tool.active;
+            self.build_tool.cancel_drag();
+            self.is_editing = false;
+            self.is_destroying = false;
+            self.last_edit_tile_pos = None;
+        }
+
+        if input.key_just_pressed(KeyCode::KeyT) {
+            self.debug_terrain = !self.debug_terrain;
+        }
+
+        if self.build_tool.active {
+            if input.key_just_pressed(KeyCode::BracketLeft)
+                || input.key_just_pressed(KeyCode::KeyQ)
+            {
+                self.build_tool.cycle_pattern(-1, &self.patterns);
+            } else if input.key_just_pressed(KeyCode::BracketRight)
+                || input.key_just_pressed(KeyCode::KeyE)
+            {
+                self.build_tool.cycle_pattern(1, &self.patterns);
             }
-            if input.mouse_just_pressed(MouseButton::Right) {
-                self.is_editing = true;
-                self.last_edit_tile_pos = None;
+
+            if input.key_just_pressed(KeyCode::KeyX) || input.key_just_pressed(KeyCode::Tab) {
+                let slots = self
+                    .patterns
+                    .get(self.build_tool.pattern)
+                    .map(|p| p.material_slots())
+                    .unwrap_or(1);
+                if slots > 1 {
+                    self.build_tool.active_slot = (self.build_tool.active_slot + 1) % slots;
+                } else {
+                    self.build_tool.active_slot = 0;
+                }
+            }
+
+            if input.key_just_pressed(KeyCode::KeyG) {
+                self.build_tool.snap = !self.build_tool.snap;
+            }
+            if input.key_just_pressed(KeyCode::KeyV) || input.key_just_pressed(KeyCode::KeyO) {
+                self.build_tool.overlap = self.build_tool.overlap.next();
+            }
+
+            let shift =
+                input.key_held(KeyCode::ShiftLeft) || input.key_held(KeyCode::ShiftRight);
+            let turn_step: i16 = if shift { 8192 } else { 2731 }; // 45 deg or ~15 deg
+            if input.key_just_pressed(KeyCode::KeyR) {
+                self.build_tool.turn(if shift { -16384 } else { 16384 }); // 90 deg quarter-turn
+            } else if input.key_just_pressed(KeyCode::Comma) {
+                self.build_tool.turn(-turn_step);
+            } else if input.key_just_pressed(KeyCode::Period) {
+                self.build_tool.turn(turn_step);
+            }
+
+            if input.key_just_pressed(KeyCode::Digit0) {
+                self.build_tool.reset_materials();
             }
         } else {
-            if input.mouse_just_pressed(MouseButton::Left) {
+            // Respect UI click consumption (e.g. clicking a hotbar slot)
+            if !input.ui_consumed_mouse {
+                if input.mouse_just_pressed(MouseButton::Left) {
+                    self.is_destroying = true;
+                    self.last_edit_tile_pos = None;
+                }
+                if input.mouse_just_pressed(MouseButton::Right) {
+                    self.is_editing = true;
+                    self.last_edit_tile_pos = None;
+                }
+            } else {
+                if input.mouse_just_pressed(MouseButton::Left) {
+                    self.is_destroying = false;
+                }
+                if input.mouse_just_pressed(MouseButton::Right) {
+                    self.is_editing = false;
+                }
+            }
+
+            if input.mouse_just_released(MouseButton::Left) || !input.mouse_held(MouseButton::Left)
+            {
                 self.is_destroying = false;
             }
-            if input.mouse_just_pressed(MouseButton::Right) {
+            if input.mouse_just_released(MouseButton::Right)
+                || !input.mouse_held(MouseButton::Right)
+            {
                 self.is_editing = false;
             }
-        }
 
-        if input.mouse_just_released(MouseButton::Left) || !input.mouse_held(MouseButton::Left) {
-            self.is_destroying = false;
-        }
-        if input.mouse_just_released(MouseButton::Right) || !input.mouse_held(MouseButton::Right) {
-            self.is_editing = false;
-        }
-
-        if input.key_just_pressed(KeyCode::KeyQ) {
-            self.change_brush_value(-1, signal_bus);
-        } else if input.key_just_pressed(KeyCode::KeyE) {
-            self.change_brush_value(1, signal_bus);
-        } else if input.key_just_pressed(KeyCode::KeyT) {
-            self.debug_terrain = !self.debug_terrain;
+            if input.key_just_pressed(KeyCode::KeyQ) {
+                self.change_brush_value(-1, signal_bus);
+            } else if input.key_just_pressed(KeyCode::KeyE) {
+                self.change_brush_value(1, signal_bus);
+            }
         }
 
         const NUMBER_KEYS: [KeyCode; 9] = [
@@ -448,12 +520,84 @@ impl TerrainEditController {
         tile_registry: &TileRegistry,
         signal_bus: &mut SignalBus,
     ) {
-        if input.ui_consumed_mouse {
+        self.update_with_movers(input, camera, chunk_manager, tile_registry, &[], signal_bus);
+    }
+
+    pub fn update_with_movers(
+        &mut self,
+        input: &InputState,
+        camera: &Camera2D,
+        chunk_manager: &mut ChunkManager,
+        tile_registry: &TileRegistry,
+        movers: &[(Vec2, Vec2)],
+        signal_bus: &mut SignalBus,
+    ) {
+        let mouse_world = camera.screen_to_world(input.mouse_pos);
+        let center_tile = IVec2::new(mouse_world.x.floor() as i32, mouse_world.y.floor() as i32);
+
+        if self.build_tool.active {
+            if !input.ui_consumed_mouse {
+                if input.mouse_just_pressed(MouseButton::Right) {
+                    self.build_tool.begin_drag(
+                        center_tile,
+                        mouse_world,
+                        &self.patterns,
+                        &self.placements,
+                    );
+                }
+                if input.mouse_just_pressed(MouseButton::Left) {
+                    self.build_tool.cancel_drag();
+                    // Try removing a single placed piece; if not a piece, dig normally
+                    if self.placements.piece_at(center_tile).is_some() {
+                        let _ = remove_piece_at(
+                            center_tile,
+                            &mut self.placements,
+                            chunk_manager,
+                            signal_bus,
+                        );
+                    } else {
+                        let center_vec = Vec2::new(center_tile.x as f32, center_tile.y as f32);
+                        let changes = self.terrain_editor.edit_at(
+                            center_vec,
+                            self.current_brush_value,
+                            chunk_manager,
+                            tile_registry,
+                            signal_bus,
+                        );
+                        if !changes.is_empty() {
+                            self.placements.on_tiles_changed(&changes);
+                        }
+                    }
+                }
+            }
+
+            if self.build_tool.is_dragging() && input.mouse_just_released(MouseButton::Right) {
+                let _ = self.build_tool.finish_drag(
+                    center_tile,
+                    &self.patterns,
+                    &mut self.placements,
+                    chunk_manager,
+                    tile_registry,
+                    movers,
+                    signal_bus,
+                );
+            }
+
+            self.build_tool.update_preview(
+                center_tile,
+                mouse_world,
+                &self.patterns,
+                &self.placements,
+                chunk_manager,
+                tile_registry,
+                movers,
+            );
             return;
         }
 
-        let mouse_world = camera.screen_to_world(input.mouse_pos);
-        let center_tile = IVec2::new(mouse_world.x.floor() as i32, mouse_world.y.floor() as i32);
+        if input.ui_consumed_mouse {
+            return;
+        }
 
         if self.is_destroying {
             if self.last_edit_tile_pos == Some(center_tile) {
@@ -461,13 +605,16 @@ impl TerrainEditController {
             }
             self.last_edit_tile_pos = Some(center_tile);
             let center_vec = Vec2::new(center_tile.x as f32, center_tile.y as f32);
-            self.terrain_editor.edit_at(
+            let changes = self.terrain_editor.edit_at(
                 center_vec,
                 self.current_brush_value,
                 chunk_manager,
                 tile_registry,
                 signal_bus,
             );
+            if !changes.is_empty() {
+                self.placements.on_tiles_changed(&changes);
+            }
         } else if self.is_editing {
             if self.last_edit_tile_pos == Some(center_tile) {
                 return;
@@ -490,6 +637,7 @@ impl TerrainEditController {
             }
             if !changes.is_empty() {
                 chunk_manager.set_tiles_at_world_positions(&changes, signal_bus);
+                self.placements.on_tiles_changed(&changes);
             }
         }
     }

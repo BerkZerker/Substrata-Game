@@ -1,9 +1,13 @@
-use glam::{IVec2, Vec2};
+use glam::{I64Vec2, IVec2, Vec2};
 use substrata::game::physics::collision::CollisionDetector;
 use substrata::game::physics::movement::MovementController;
 use substrata::game::settings::{CHUNK_BYTE_LEN, CHUNK_SIZE};
 use substrata::game::signals::SignalBus;
-use substrata::game::tiles::{TileRegistry, AIR, DIRT, GRASS, STONE};
+use substrata::game::tiles::{TileRegistry, AIR, BRICK, DIRT, GLASS, GRASS, MORTAR, PLANK, STONE};
+use substrata::game::world::building::{
+    apply_placement, free_anchor_for_tile, plan_placement, remove_piece_at, sin_cos, BuildTool,
+    Overlap, PatternRegistry, PlacePose, PlaceRefusal, Placements, SlotKind, Yaw2D, TRIG_ONE,
+};
 use substrata::game::world::chunk_manager::{ChunkManager, WorldTileChange};
 use substrata::game::world::generator::{
     BaseTerrainGenerator, SimplexConfig, SimplexTerrainGenerator,
@@ -346,3 +350,236 @@ fn test_wgpu_shaders_and_pipelines_validation() {
     }
     queue.submit(std::iter::once(encoder.finish()));
 }
+
+#[test]
+fn test_ensure_building_material_textures_and_registry() {
+    use std::path::Path;
+    let assets = [
+        (BRICK, "assets/textures/brick.png", [0.65, 0.28, 0.20, 1.0]),
+        (MORTAR, "assets/textures/mortar.png", [0.76, 0.74, 0.68, 1.0]),
+        (PLANK, "assets/textures/plank.png", [0.58, 0.40, 0.22, 1.0]),
+        (GLASS, "assets/textures/glass.png", [0.65, 0.88, 0.95, 0.85]),
+    ];
+    for (id, path_str, color) in assets {
+        let p = Path::new(path_str);
+        if !p.exists() {
+            let bytes = TileRegistry::generate_procedural_texture(id, color, 32);
+            if let Some(img) = image::RgbaImage::from_raw(32, 32, bytes) {
+                let _ = img.save(p);
+            }
+        }
+    }
+
+    let registry = TileRegistry::new_default();
+    assert!(registry.is_solid(BRICK));
+    assert!(registry.is_solid(MORTAR));
+    assert!(registry.is_solid(PLANK));
+    assert!(registry.is_solid(GLASS));
+    assert_eq!(registry.find_tile_by_name("brick"), Some(BRICK));
+    assert_eq!(registry.find_tile_by_name("mortar"), Some(MORTAR));
+    assert_eq!(registry.find_tile_by_name("plank"), Some(PLANK));
+    assert_eq!(registry.find_tile_by_name("glass"), Some(GLASS));
+    // Brick must be harder than mortar so Dijkstra flood-fill follows mortar joints first
+    assert!(registry.get_hardness(BRICK) > registry.get_hardness(MORTAR));
+}
+
+#[test]
+fn test_integer_trig_and_2d_rotation() {
+    assert_eq!(sin_cos(0), (0, TRIG_ONE));
+    assert_eq!(sin_cos(16384), (TRIG_ONE, 0));
+    assert_eq!(sin_cos(32768), (0, -TRIG_ONE));
+    assert_eq!(sin_cos(49152), (-TRIG_ONE, 0));
+
+    for step in 0..64u16 {
+        let yaw = Yaw2D::new(step * 1024);
+        let orig = I64Vec2::new(1536, -768);
+        let world = yaw.to_world(orig);
+        let back = yaw.to_local(world);
+        assert!(
+            (back.x - orig.x).abs() <= 1 && (back.y - orig.y).abs() <= 1,
+            "Round-trip drift too large at step {}: {:?} -> {:?}",
+            step,
+            orig,
+            back
+        );
+    }
+}
+
+#[test]
+fn test_brick_building_families_custom_materials_and_piece_removal() {
+    let registry = TileRegistry::new_default();
+    let patterns = PatternRegistry::with_defaults();
+    let mut placements = Placements::new();
+    let mut signals = SignalBus::new();
+    let mut chunk_manager = ChunkManager::new(777);
+
+    let temp_world = format!("test_build_{}", std::process::id());
+    let save_mgr = WorldSaveManager::new();
+    let empty_chunk = vec![0u8; CHUNK_BYTE_LEN];
+    save_mgr.save_chunk(&temp_world, IVec2::new(0, 0), &empty_chunk);
+    chunk_manager.setup_persistence(save_mgr.clone(), temp_world.clone());
+    chunk_manager.on_player_chunk_changed(IVec2::new(0, 0), &mut signals);
+
+    // 1. Place a 2-unit x 2-course running-bond brick wall at (4, 20)
+    let pose = PlacePose {
+        anchor: free_anchor_for_tile(IVec2::new(4, 20), 0),
+        yaw: 0,
+    };
+    let mut cmd = patterns.command("brick_running", pose, [2, 2]).unwrap();
+    cmd.serial = placements.allocate_serial();
+
+    let preview = apply_placement(
+        &cmd,
+        &patterns,
+        &mut placements,
+        &mut chunk_manager,
+        &registry,
+        &[],
+        &mut signals,
+    )
+    .expect("brick_running placement should succeed");
+
+    // 2 units x 2 courses of running bond (odd course shifted by half a brick -> 2 full + 1 split course = 5 pieces)
+    assert!(preview.pieces >= 4);
+    assert_eq!(placements.len(), 1);
+
+    // Leading bed joint at y = 20 and head joint at x = 4 should be MORTAR
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(4.0, 20.0))[0],
+        MORTAR
+    );
+    // First brick interior at (5, 19) should be BRICK
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(5.0, 19.0))[0],
+        BRICK
+    );
+    assert!(placements.piece_at(IVec2::new(5, 19)).is_some());
+    // Mortar joint is not a piece
+    assert!(placements.piece_at(IVec2::new(4, 20)).is_none());
+
+    // 2. Remove a single brick piece at (5, 19): the brick becomes AIR while the mortar at (4, 20) stays intact!
+    let removed_report = remove_piece_at(
+        IVec2::new(5, 19),
+        &mut placements,
+        &mut chunk_manager,
+        &mut signals,
+    )
+    .expect("remove_piece_at should remove the brick");
+    assert!(!removed_report.replaced.is_empty());
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(5.0, 19.0))[0],
+        AIR
+    );
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(4.0, 20.0))[0],
+        MORTAR
+    );
+
+    // 3. Test custom material slots: place `brick_stack` using STONE for bricks and DIRT for mortar
+    let pose2 = PlacePose {
+        anchor: free_anchor_for_tile(IVec2::new(4, 28), 0),
+        yaw: 0,
+    };
+    let mut cmd2 = patterns.command("brick_stack", pose2, [2, 1]).unwrap();
+    cmd2.materials = [STONE, DIRT, 0, 0];
+    cmd2.serial = placements.allocate_serial();
+
+    let preview2 = apply_placement(
+        &cmd2,
+        &patterns,
+        &mut placements,
+        &mut chunk_manager,
+        &registry,
+        &[],
+        &mut signals,
+    )
+    .expect("custom material brick_stack placement should succeed");
+    assert_eq!(preview2.pieces, 2);
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(4.0, 28.0))[0],
+        DIRT
+    );
+    assert_eq!(
+        chunk_manager.get_tile_at_world_pos(Vec2::new(5.0, 27.0))[0],
+        STONE
+    );
+
+    // 4. Test overlap refusal & player AABB refusal
+    let mut cmd_overlap = cmd2;
+    cmd_overlap.serial = placements.allocate_serial();
+    cmd_overlap.overlap = Overlap::Refuse;
+    assert_eq!(
+        plan_placement(&cmd_overlap, &patterns, &chunk_manager, &registry, &[]).unwrap_err(),
+        PlaceRefusal::Occupied
+    );
+
+    // Overwrite mode succeeds on occupied terrain unless blocked by player AABB
+    cmd_overlap.overlap = Overlap::Overwrite;
+    let player_mover = [(Vec2::new(8.0, 27.0), Vec2::new(10.0, 16.0))];
+    assert_eq!(
+        plan_placement(
+            &cmd_overlap,
+            &patterns,
+            &chunk_manager,
+            &registry,
+            &player_mover
+        )
+        .unwrap_err(),
+        PlaceRefusal::PlayerOverlap
+    );
+
+    // 5. Test all remaining families: Voronoi stone, plank, and glass pane
+    for (pat_name, ext, pos) in [
+        ("stone_mortared", [6, 6], IVec2::new(2, 8)),
+        ("plank_floor", [8, 2], IVec2::new(10, 8)),
+        ("glass_pane", [5, 5], IVec2::new(20, 8)),
+    ] {
+        let p = PlacePose {
+            anchor: free_anchor_for_tile(pos, 0),
+            yaw: 0,
+        };
+        let mut c = patterns.command(pat_name, p, ext).unwrap();
+        c.serial = placements.allocate_serial();
+        let res = apply_placement(
+            &c,
+            &patterns,
+            &mut placements,
+            &mut chunk_manager,
+            &registry,
+            &[],
+            &mut signals,
+        );
+        assert!(res.is_ok(), "Pattern {} failed to place: {:?}", pat_name, res);
+    }
+
+    // 6. Test next_slots snapping on placement records
+    let slots = placements.next_slots(cmd2.serial, &patterns);
+    assert!(slots.iter().any(|(k, _)| *k == SlotKind::Next));
+    assert!(slots.iter().any(|(k, _)| *k == SlotKind::Above));
+
+    // 7. Test BuildTool drag sizing & material slot assignment
+    let mut tool = BuildTool::new();
+    tool.active = true;
+    tool.begin_drag(
+        IVec2::new(2, 28),
+        Vec2::new(2.5, 28.5),
+        &patterns,
+        &placements,
+    );
+    tool.update_preview(
+        IVec2::new(14, 20),
+        Vec2::new(14.5, 20.5),
+        &patterns,
+        &placements,
+        &chunk_manager,
+        &registry,
+        &[],
+    );
+    let plan = tool.plan.as_ref().expect("preview plan should exist");
+    assert!(plan.cmd.extent[0] >= 2);
+    assert!(plan.cmd.extent[1] >= 2);
+    assert!(!plan.boxes.is_empty());
+
+    save_mgr.delete_world(&temp_world);
+}
+

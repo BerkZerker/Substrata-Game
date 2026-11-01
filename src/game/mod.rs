@@ -135,13 +135,18 @@ impl GameCallbacks for SubstrataGame {
         );
 
         // Terrain editing input & execution
+        let movers = [(
+            self.player.position,
+            self.player.movement.collision_box_size,
+        )];
         self.terrain_edit_controller
             .handle_input(input, &self.tile_registry, &mut self.signal_bus);
-        self.terrain_edit_controller.update(
+        self.terrain_edit_controller.update_with_movers(
             input,
             &self.camera,
             &mut self.chunk_manager,
             &self.tile_registry,
+            &movers,
             &mut self.signal_bus,
         );
 
